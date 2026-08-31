@@ -47,7 +47,7 @@ SECTIONS {
     }
 }
 
-/* PP5020 exposes 96 KiB of IRAM to firmware at 0x40000000. */
+/* PP5020 exposes 96 KiB of firmware-usable IRAM at 0x40000000. */
 _remap_stub_base = 0x40000000;
 _und_stack_top   = 0x40000600;
 _abt_stack_top   = 0x40000800;
