@@ -17,6 +17,12 @@ Bring-up .ipod SHA-256:
 Select + Play disk mode confirmed: yes/no
 ```
 
+The captured current working `rockbox.ipod` SHA-256 is:
+
+```text
+8dc29b572f0eeee69dfc9471fe6fae6beb2bf9ec35f15d6ffa3fb9b67e26f3d7
+```
+
 Keep the known-good boot file and firmware-partition backup off-device. Do not
 write stage one directly into the only OSOS slot.
 
@@ -29,7 +35,9 @@ write stage one directly into the only OSOS slot.
 5. Menu/Left/Select/Right/Play each light exactly one top box.
 6. Clockwise wheel movement flashes yellow; counter-clockwise flashes cyan.
 7. Hold makes the lower-left box orange and suppresses the reboot chord.
-8. Menu + Play for two seconds reboots.
+8. The two lower-center panel boxes are both black on this P98/M9829 because
+   interface revision `0x00060000` selects panel type 0.
+9. Menu + Play for two seconds reboots.
 
 ## Report back
 
