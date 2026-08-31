@@ -4,9 +4,11 @@
     .global _start
     .type _start, %function
 
-/* The Apple loader enters at image offset zero while SDRAM is still visible
- * at 0x10000000. The reset branch and every instruction before remapping are
- * position-independent. */
+/*
+ * The Apple/third-party loader enters at image offset zero while SDRAM is in
+ * its native 0x10000000 window. Every instruction before MMAP0 is switched is
+ * PC-relative or accesses a fixed MMIO/IRAM address.
+ */
 _start:
     b reset_handler
     b undef_entry
@@ -20,15 +22,14 @@ _start:
 reset_handler:
     msr cpsr_c, #0xd3
 
-    /* A defensive dual-core gate. CPU id is 0x55, COP id is 0xaa. */
     ldr r0, =0x60000000
     ldrb r1, [r0]
     cmp r1, #0xaa
     beq park_cop
+    cmp r1, #0x55
+    bne early_fault_reset
 
-    /* Request COP sleep from the CPU side as well, then wait for the status
-     * bit with a bounded loop. This closes the race where CPU reaches MMAP0
-     * while COP is still fetching reset code from the native SDRAM window. */
+    /* The CPU must not remap SDRAM while the COP is still fetching there. */
     ldr r0, =0x60007004
     mov r1, #0x80000000
     str r1, [r0]
@@ -42,22 +43,25 @@ reset_handler:
     bne 7f
     subs r2, r2, #1
     bne 0b
+    b early_fault_reset
 7:
 
-    /* Mask all normal/high interrupts and disable the unified cache before
-     * changing the SDRAM mapping. */
     mvn r1, #0
     ldr r0, =0x60004028
     str r1, [r0]
     ldr r0, =0x60004128
     str r1, [r0]
+    ldr r0, =0x60004038
+    str r1, [r0]
+    ldr r0, =0x60004138
+    str r1, [r0]
+
     ldr r0, =0x6000c000
     mov r1, #0
     str r1, [r0]
 
     ldr sp, =_stack_top
 
-    /* Copy the remap sequence to IRAM, then execute it there. */
     adr r0, remap_stub
     adr r1, remap_stub_end
     ldr r2, =_remap_stub_base
@@ -80,16 +84,14 @@ park_cop:
 
     .align 2
 remap_stub:
-    /* MMAP0 logical: 32 MiB window at zero. */
     mov r0, #0xf0000000
     orr r0, r0, #0x0000f000
-    mov r1, #0x00003e00
+    mov r1, #0x00003e00       /* 32 MiB logical window at zero */
     str r1, [r0]
 
-    /* MMAP0 physical: SDRAM native base 0x10000000 + PP502x access flags. */
     mov r1, #0x10000000
     orr r1, r1, #0x00000f00
-    orr r1, r1, #0x00000084
+    orr r1, r1, #0x00000084   /* SDRAM native base + PP502x access flags */
     str r1, [r0, #4]
     ldr pc, remap_target
 remap_target:
@@ -97,7 +99,6 @@ remap_target:
 remap_stub_end:
 
 post_remap:
-    /* Install separate banked stacks before any exception can be handled. */
     msr cpsr_c, #0xd7
     ldr sp, =_abt_stack_top
     msr cpsr_c, #0xdb
@@ -109,7 +110,6 @@ post_remap:
     msr cpsr_c, #0xd3
     ldr sp, =_stack_top
 
-    /* The loader placed .data at its final VMA/LMA. Only BSS is cleared. */
     ldr r0, =__bss_start
     ldr r1, =__bss_end
     mov r2, #0
@@ -122,8 +122,6 @@ post_remap:
 4:
     b 4b
 
-/* Fault stubs preserve only the small, stable record needed for the first
- * hardware phase. Each mode already has a banked IRAM stack. */
 undef_entry:
     mov r0, #1
     b fault_common
@@ -149,12 +147,11 @@ fault_common:
     mov r1, lr
     mrs r2, spsr
 
-    /* A fault before MMAP0 is live cannot safely call zero-linked C code.
-     * LR still carries the native 0x10000000 SDRAM window in that case;
-     * request a hardware reset directly from fixed MMIO instead. */
+    /* Any non-zero high byte means execution was still in native SDRAM,
+     * IRAM, or another pre-remap window. Only low linked addresses may call C. */
     mov r3, r1, lsr #24
-    cmp r3, #0x10
-    beq early_fault_reset
+    cmp r3, #0
+    bne early_fault_reset
 
     ldr sp, =_panic_stack_top
     bl a1099_fault
