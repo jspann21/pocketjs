@@ -1,0 +1,200 @@
+{
+  "directoryOffset": 14848,
+  "entries": [
+    {
+      "address": 268435456,
+      "checksum": 501497541,
+      "checksumMatches": true,
+      "deviceOffset": 17408,
+      "directoryOffset": 14848,
+      "encryptedByteSum": 501497541,
+      "entryOffset": 0,
+      "fileOffset": 15872,
+      "flash": 0,
+      "id": "soso",
+      "length": 5387540,
+      "loadAddress": 76349504,
+      "payloadSha256": "9321189b846a7317f4f575075696056e9a18c79644886a00055a402259c6fadc",
+      "selectedLiteralOffsets": {
+        "0x00003e00": [
+          2743104,
+          3685260,
+          3977988,
+          3977996,
+          4515124
+        ],
+        "0x10000f84": [
+          744
+        ],
+        "0x60000000": [
+          18028,
+          272020,
+          804108,
+          804116,
+          2702064,
+          2704876,
+          2705016,
+          3211492,
+          3211984,
+          3213976,
+          3215028,
+          3216020,
+          3218492,
+          3236896,
+          3331592,
+          3670352,
+          3675044,
+          3675048,
+          3679156,
+          3694836,
+          4345928,
+          4987528,
+          4990160
+        ],
+        "0x70008a00": [
+          1137680,
+          1226124
+        ],
+        "0xf000f000": [
+          732,
+          4480,
+          429744,
+          1407984,
+          1737756,
+          1878860,
+          5278884,
+          5279024
+        ]
+      },
+      "type": "!ATA",
+      "vectors": [
+        {
+          "address": 268435456,
+          "branchTarget": 268435948,
+          "isArmBranch": true
+        },
+        {
+          "address": 268435460,
+          "branchTarget": 268435876,
+          "isArmBranch": true
+        },
+        {
+          "address": 268435464,
+          "branchTarget": null,
+          "isArmBranch": false
+        },
+        {
+          "address": 268435468,
+          "branchTarget": 268435900,
+          "isArmBranch": true
+        },
+        {
+          "address": 268435472,
+          "branchTarget": 268435924,
+          "isArmBranch": true
+        },
+        {
+          "address": 268435476,
+          "branchTarget": 268435476,
+          "isArmBranch": true
+        },
+        {
+          "address": 268435480,
+          "branchTarget": 268435836,
+          "isArmBranch": true
+        },
+        {
+          "address": 268435484,
+          "branchTarget": 268435800,
+          "isArmBranch": true
+        }
+      ],
+      "version": 24595
+    },
+    {
+      "address": 268435456,
+      "checksum": 197370726,
+      "checksumMatches": true,
+      "decryptedByteSum": 197370726,
+      "decryptedSha256": "9a54779a693a16e556d798bcd70d9333d8d75f39b690d6c921986a8be6b6fdde",
+      "deviceOffset": 5405696,
+      "directoryOffset": 14888,
+      "encryptedByteSum": 141450411,
+      "entryOffset": 0,
+      "fileOffset": 5404160,
+      "flash": 0,
+      "id": "dpua",
+      "keys": [
+        {
+          "keyHex": "74e405a3",
+          "marker": 1974983950,
+          "markerIndex": 6
+        }
+      ],
+      "length": 1109716,
+      "loadAddress": 76349504,
+      "payloadSha256": "80dec4256c1895c1d1fff9fd03cda993fc0f5c889534e3efd242780992fe0d9e",
+      "securityBlockOffset": 5403648,
+      "securityBlockSha256": "1a4f781885c151c907c768a81e6404828d53301af1b057eedfa03065adc81790",
+      "type": "!ATA",
+      "version": 24595
+    }
+  ],
+  "extractedSoso": {
+    "bytes": 5387540,
+    "exactMatch": true,
+    "path": "RetailOS_1.2.1_soso.bin",
+    "sha256": "9321189b846a7317f4f575075696056e9a18c79644886a00055a402259c6fadc"
+  },
+  "firmware": {
+    "bytes": 6514176,
+    "path": "iPod_5.1.2.1.bin",
+    "sha256": "55845b4694263be104e8bfded72f11d1b1d5b9cbeec64f9ffaced80b0bcdc2f5"
+  },
+  "ipsw": {
+    "bytes": 3831893,
+    "firmwareMatches": [
+      {
+        "firmwareOffset": 2048,
+        "member": "Firmware-5.4.2.1",
+        "prefixSha256": "cb92e20a284d479d860fc3cee02a6c60326ed03d91699382e7e2d033e71a6c07"
+      }
+    ],
+    "manifest": {
+      "FirmwarePayload": {
+        "BuildID": 69304320,
+        "DefaultColor": "XXX",
+        "DisplayInAbout": true,
+        "FamilyID": 5,
+        "FirmwareName": "Firmware-5.4.2.1",
+        "UpdaterFamilyID": 5,
+        "VisibleBuildID": 18972672,
+        "aboutBoxOrdering": 5
+      }
+    },
+    "members": [
+      {
+        "bytes": 6516224,
+        "name": "Firmware-5.4.2.1"
+      },
+      {
+        "bytes": 670,
+        "name": "manifest.plist"
+      }
+    ],
+    "path": "iPod_5.1.2.1.ipsw",
+    "sha256": "03643928fd4b5d180f92396382680c48e745826b8b170bf2e298bef2bbe26464"
+  },
+  "liveIpod": {
+    "bytes": 1165744,
+    "calculatedChecksum": 114558779,
+    "declaredChecksum": 114558779,
+    "firstWord": 3810652371,
+    "imageBytes": 1165736,
+    "imageSha256": "03c73e7c0a060f53f49cb3a04447b57ae0299ee551dafc820f63c51338a26f3c",
+    "model": "ipco",
+    "path": "rockbox-current-live-20260831-131920.ipod",
+    "sha256": "8dc29b572f0eeee69dfc9471fe6fae6beb2bf9ec35f15d6ffa3fb9b67e26f3d7",
+    "valid": true
+  }
+}

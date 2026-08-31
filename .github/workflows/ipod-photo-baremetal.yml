@@ -1,0 +1,148 @@
+name: iPod Photo bare-metal Phase 0
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "hosts/ipod-photo-baremetal/**"
+      - ".github/workflows/ipod-photo-baremetal.yml"
+  pull_request:
+    paths:
+      - "hosts/ipod-photo-baremetal/**"
+      - ".github/workflows/ipod-photo-baremetal.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The successful 5,360-byte hardware probe was produced by the LLVM 17.0.0
+    # toolchain shipped in Swift 6.2.1. Upstream LLVM 17.0.6 changes ARM codegen
+    # by 12 bytes, so pin the exact official image and verify its compiler
+    # commit before accepting the reproducibility hash.
+    container:
+      image: swift:6.2.1-jammy@sha256:6e33c70a59180c9b518f67728538312975cb3891177d20215cd2e31bdfe70791
+
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install host build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install --yes --no-install-recommends make gcc
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Verify exact reference toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          clang --version
+          ld.lld --version
+          llvm-objcopy --version
+          llvm-objdump --version
+          readelf --version | head -1
+          nm --version | head -1
+          python3 --version
+          make --version | head -1
+          cc --version | head -1
+          clang --version | grep -F '10999b6d034fe318f3d56c83bddb6572593a8bb0'
+          ld.lld --version | grep -F '17.0.0'
+
+      - name: Build exact type-0 handoff candidate
+        shell: bash
+        run: make -C hosts/ipod-photo-baremetal CC=clang ci
+
+      - name: Build GPIO-detected fallback
+        shell: bash
+        run: |
+          make -C hosts/ipod-photo-baremetal \
+            CC=clang \
+            BUILD="$GITHUB_WORKSPACE/hosts/ipod-photo-baremetal/build-auto" \
+            LCD_TYPE=-1 clean all test
+
+      - name: Build direct-image compile gate
+        shell: bash
+        run: |
+          make -C hosts/ipod-photo-baremetal \
+            CC=clang \
+            BUILD="$GITHUB_WORKSPACE/hosts/ipod-photo-baremetal/build-direct" \
+            LCD_TYPE=0 HANDOFF_SIGNATURE=0 clean all test
+
+      - name: Build other panel compile gates
+        shell: bash
+        run: |
+          for panel in 1 3; do
+            make -C hosts/ipod-photo-baremetal \
+              CC=clang \
+              BUILD="$GITHUB_WORKSPACE/hosts/ipod-photo-baremetal/build-lcd-$panel" \
+              LCD_TYPE="$panel" clean all
+          done
+
+      - name: Generate exact-candidate report
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hosts/ipod-photo-baremetal
+          python3 tools/build_report.py \
+            --output build/BUILD_REPORT.json \
+            --variant type0-handoff,0,1,build \
+            --variant auto-handoff,-1,1,build-auto \
+            --variant type0-direct,0,0,build-direct \
+            --matrix 1,build-lcd-1 \
+            --matrix 3,build-lcd-3
+          printf '%s\n' "$CANDIDATE_SHA" > build/CANDIDATE_COMMIT.txt
+          {
+            printf 'candidate commit: %s\n' "$CANDIDATE_SHA"
+            swift --version
+            clang --version
+            ld.lld --version
+            llvm-objcopy --version
+            llvm-objdump --version
+            python3 --version
+          } > build/TOOLCHAIN.txt
+          sha256sum \
+            build/BUILD_REPORT.json \
+            build/CANDIDATE_COMMIT.txt \
+            build/TOOLCHAIN.txt >> build/SHA256SUMS.txt
+          cat build/CANDIDATE_COMMIT.txt
+          cat build/SHA256SUMS.txt
+          cat build/BUILD_REPORT.json
+
+      - name: Upload reversible exact-candidate kit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketjs-a1099-phase0-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: true
+          path: |
+            hosts/ipod-photo-baremetal/Makefile
+            hosts/ipod-photo-baremetal/.gitignore
+            hosts/ipod-photo-baremetal/README.md
+            hosts/ipod-photo-baremetal/UNTESTED-HARDWARE.txt
+            hosts/ipod-photo-baremetal/boot
+            hosts/ipod-photo-baremetal/include
+            hosts/ipod-photo-baremetal/src
+            hosts/ipod-photo-baremetal/tools
+            hosts/ipod-photo-baremetal/tests
+            hosts/ipod-photo-baremetal/docs
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-probe.elf
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-probe.bin
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-probe.ipod
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-probe.map
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-probe.dis
+            hosts/ipod-photo-baremetal/build/SHA256SUMS.txt
+            hosts/ipod-photo-baremetal/build/BUILD_REPORT.json
+            hosts/ipod-photo-baremetal/build/CANDIDATE_COMMIT.txt
+            hosts/ipod-photo-baremetal/build/TOOLCHAIN.txt
