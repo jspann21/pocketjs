@@ -111,8 +111,8 @@ def expected_flat(elf: bytes, loads: list[LoadSegment]) -> bytes:
 
 
 def decode_arm_b(word: int, address: int) -> int | None:
-    """Decode an ARM-state B (not BL) target, or return None."""
-    if (word >> 28) == 0xF or (word & 0x0F000000) != 0x0A000000:
+    """Decode an unconditional ARM-state B (not BL) target, or return None."""
+    if (word & 0xFF000000) != 0xEA000000:
         return None
     immediate = word & 0x00FFFFFF
     if immediate & 0x00800000:
@@ -138,7 +138,9 @@ def verify(elf_path: Path, bin_path: Path, ipod_path: Path) -> None:
         word = struct.unpack_from("<I", image, address)[0]
         target = decode_arm_b(word, address)
         if target is None:
-            raise ValueError(f"vector {index} is not an ARM B instruction: 0x{word:08x}")
+            raise ValueError(
+                f"vector {index} is not an unconditional ARM B instruction: 0x{word:08x}"
+            )
         if target < 32 or target >= len(image) or (target & 3) != 0:
             raise ValueError(
                 f"vector {index} branches outside aligned image code: 0x{target:08x}"
@@ -158,7 +160,7 @@ def verify(elf_path: Path, bin_path: Path, ipod_path: Path) -> None:
 
     print(
         f"verified: ARM ELF entry=0, {len(loads)} PT_LOAD segment(s), "
-        f"{len(image)}-byte image, 8 in-range vector branches, "
+        f"{len(image)}-byte image, 8 in-range unconditional vector branches, "
         f"valid ipco checksum 0x{checksum:08x}"
     )
 
