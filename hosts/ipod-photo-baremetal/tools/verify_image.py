@@ -16,11 +16,13 @@ PT_INTERP = 3
 SHT_RELA = 4
 SHT_DYNAMIC = 6
 SHT_REL = 9
+PF_X = 1
 EM_ARM = 40
 ET_EXEC = 2
 MODEL = b"ipco"
 SEED = 3
 SDRAM_LIMIT = 32 * 1024 * 1024
+BOOTLOADER_LIMIT = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,7 @@ class LoadSegment:
     paddr: int
     filesz: int
     memsz: int
+    flags: int
 
 
 def parse_elf(data: bytes) -> tuple[int, list[LoadSegment]]:
@@ -55,7 +58,7 @@ def parse_elf(data: bytes) -> tuple[int, list[LoadSegment]]:
         at = e_phoff + index * e_phentsize
         if at + PROGRAM_HEADER.size > len(data):
             raise ValueError("program-header table is truncated")
-        p_type, p_offset, p_vaddr, p_paddr, p_filesz, p_memsz, _flags, _align = (
+        p_type, p_offset, p_vaddr, p_paddr, p_filesz, p_memsz, flags, _align = (
             PROGRAM_HEADER.unpack_from(data, at)
         )
         if p_type in (PT_DYNAMIC, PT_INTERP):
@@ -63,12 +66,20 @@ def parse_elf(data: bytes) -> tuple[int, list[LoadSegment]]:
         if p_type == PT_LOAD:
             if p_offset + p_filesz > len(data) or p_filesz > p_memsz:
                 raise ValueError("invalid PT_LOAD extent")
-            if p_paddr + p_memsz > SDRAM_LIMIT or p_vaddr + p_memsz > SDRAM_LIMIT:
+            if p_vaddr != p_paddr:
+                raise ValueError("stage-one PT_LOAD VMA and physical address must match")
+            if p_paddr + p_memsz > SDRAM_LIMIT:
                 raise ValueError("PT_LOAD escapes low 32 MiB SDRAM")
-            loads.append(LoadSegment(p_offset, p_vaddr, p_paddr, p_filesz, p_memsz))
+            loads.append(LoadSegment(p_offset, p_vaddr, p_paddr, p_filesz, p_memsz, flags))
 
     if not loads or min(segment.paddr for segment in loads) != 0:
         raise ValueError("no PT_LOAD starts at physical address zero")
+    if not any(
+        segment.paddr <= e_entry < segment.paddr + segment.memsz and
+        (segment.flags & PF_X) != 0
+        for segment in loads
+    ):
+        raise ValueError("entry address is not inside an executable PT_LOAD")
 
     if e_shnum:
         if e_shentsize != SECTION_HEADER.size:
@@ -99,8 +110,14 @@ def expected_flat(elf: bytes, loads: list[LoadSegment]) -> bytes:
     return bytes(result)
 
 
-def is_arm_branch(word: int) -> bool:
-    return (word & 0x0E000000) == 0x0A000000 and (word >> 28) != 0xF
+def decode_arm_b(word: int, address: int) -> int | None:
+    """Decode an ARM-state B (not BL) target, or return None."""
+    if (word >> 28) == 0xF or (word & 0x0F000000) != 0x0A000000:
+        return None
+    immediate = word & 0x00FFFFFF
+    if immediate & 0x00800000:
+        immediate -= 0x01000000
+    return address + 8 + (immediate << 2)
 
 
 def verify(elf_path: Path, bin_path: Path, ipod_path: Path) -> None:
@@ -114,10 +131,18 @@ def verify(elf_path: Path, bin_path: Path, ipod_path: Path) -> None:
         raise ValueError("flat image does not exactly reproduce file-backed PT_LOAD bytes")
     if len(image) < 32:
         raise ValueError("flat image is too small for vectors")
+    if len(image) > BOOTLOADER_LIMIT:
+        raise ValueError("flat image exceeds the installed bootloader's 8 MiB limit")
     for index in range(8):
-        word = struct.unpack_from("<I", image, index * 4)[0]
-        if not is_arm_branch(word):
-            raise ValueError(f"vector {index} is not an ARM B/BL instruction: 0x{word:08x}")
+        address = index * 4
+        word = struct.unpack_from("<I", image, address)[0]
+        target = decode_arm_b(word, address)
+        if target is None:
+            raise ValueError(f"vector {index} is not an ARM B instruction: 0x{word:08x}")
+        if target < 32 or target >= len(image) or (target & 3) != 0:
+            raise ValueError(
+                f"vector {index} branches outside aligned image code: 0x{target:08x}"
+            )
 
     if len(transport) < 8:
         raise ValueError("ipco transport is truncated")
@@ -133,7 +158,8 @@ def verify(elf_path: Path, bin_path: Path, ipod_path: Path) -> None:
 
     print(
         f"verified: ARM ELF entry=0, {len(loads)} PT_LOAD segment(s), "
-        f"{len(image)}-byte image, valid ipco checksum 0x{checksum:08x}"
+        f"{len(image)}-byte image, 8 in-range vector branches, "
+        f"valid ipco checksum 0x{checksum:08x}"
     )
 
 
