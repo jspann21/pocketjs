@@ -1,75 +1,63 @@
-# Reversible stage-one boot on the A1099
+# Reversible Phase-0 boot
 
-This procedure uses the already-installed iPod bootloader as a file loader
-only. Rockbox is not part of the stage-one runtime. Nothing in the firmware
-partition or OSOS image is modified.
+This procedure changes only the normal FAT32 file loaded by the already-
+installed iPod bootloader. It does not modify the firmware partition, OSOS
+directory, Apple firmware image, or bootloader.
 
-The loader checks `/.rockbox/rockbox.ipod` first, then `/rockbox.ipod`. It reads
-the standard eight-byte additive-checksum wrapper, verifies the payload, loads
-that payload at native SDRAM address `0x10000000`, and transfers control there.
-The `Rockbox\1` marker at payload offset `0x20` is used only when falling back
-to an image embedded in OSOS; it is not required for a FAT32-loaded file.
+## Preconditions
 
-## Required recovery facts
+1. Keep a complete, hash-verified firmware-partition backup off-device.
+2. Keep a separate copy of the current working `rockbox.ipod` off-device.
+3. Confirm Select + Play enters boot-ROM disk mode.
+4. Keep the first test on reliable external power.
+5. Use the `.ipod` file from the exact CI commit being evaluated and record its
+   SHA-256 before installation.
 
-Before copying anything:
+The handoff probe contains the compatibility tag expected by the installed
+loader, which loads the wrapper body at `0x10000000` and jumps to offset zero.
+After that jump no Rockbox runtime code or service is used.
 
-- retain the current working `rockbox.ipod` off-device;
-- verify the complete firmware-partition backup off-device;
-- verify Select + Play disk mode again;
-- keep the iPod connected to external power for the first boot;
-- do not alter `apple_os.ipod`, the firmware partition, or the bootloader.
+## Install atomically
 
-The captured current working file has SHA-256:
-
-```text
-8dc29b572f0eeee69dfc9471fe6fae6beb2bf9ec35f15d6ffa3fb9b67e26f3d7
-```
-
-## Copy
-
-With the iPod mounted as storage:
+`--mount` may name the volume root or its `.rockbox` directory.
 
 ```sh
-cd /path/to/ipod/.rockbox
-cp rockbox.ipod rockbox.ipod.known-good
-cp /path/to/pocketjs-a1099-bringup.ipod rockbox.ipod.new
-sync
-cmp rockbox.ipod.new /path/to/pocketjs-a1099-bringup.ipod
-mv rockbox.ipod.new rockbox.ipod
-sync
+python3 hosts/ipod-photo-baremetal/tools/handoff.py install \
+  --mount /path/to/IPOD \
+  --probe /path/to/pocketjs-a1099-probe.ipod
+
+python3 hosts/ipod-photo-baremetal/tools/handoff.py status \
+  --mount /path/to/IPOD
 ```
 
-On systems where `sync` is not available, eject through the operating system
-and wait for all writes to finish. The stage-one file SHA-256 must match the
-`SHA256SUMS.txt` in the same CI artifact.
+The helper validates both wrappers, creates and verifies an exact backup,
+records original/probe hashes, writes through a temporary file, flushes it,
+renames atomically, and verifies the installed bytes. It also recovers the
+known Windows interrupted-preinstall state only when the active and backup
+hashes prove that the original image is unchanged.
 
-## Boot
+Eject cleanly and reboot normally. Complete `HARDWARE_TEST.md`.
 
-1. Eject cleanly.
-2. Leave Hold off and do not hold Menu or Play during boot.
-3. Reset/reboot normally.
-4. Observe the diagnostic screen and complete `HARDWARE_TEST.md`.
-5. Menu + Play held for two seconds asks stage one to reboot.
+## Restore
 
-## Recovery
+At any blank screen, unexpected peripheral behavior, or after the planned test:
 
-At any blank screen or unexpected behavior:
+1. reset and enter Select + Play boot-ROM disk mode;
+2. mount the data volume;
+3. run:
 
-1. Hold Menu + Select until the iPod resets.
-2. Immediately hold Select + Play to enter Apple disk mode.
-3. Mount the data partition.
-4. Restore `.rockbox/rockbox.ipod.known-good` as `.rockbox/rockbox.ipod`.
-5. Eject cleanly and boot normally.
+```sh
+python3 hosts/ipod-photo-baremetal/tools/handoff.py restore \
+  --mount /path/to/IPOD
+```
 
-The installed bootloader also selects Apple firmware when Hold was active or
-Menu was held at boot, but disk mode is the preferred recovery route because
-it permits restoring the file without executing stage one again.
+The helper refuses restoration unless the backup matches the recorded original
+hash, verifies the replacement, and only then removes transaction state.
 
-## Forbidden during stage one
+## Forbidden in Phase 0
 
-- no direct OSOS installation;
-- no firmware-partition write;
-- no deletion of the known-good file or off-device backups;
-- no repeated test after unexplained power, disk, or USB behavior;
-- no assumption that a valid checksum proves hardware safety.
+- direct OSOS or firmware-partition installation;
+- deleting the off-device backups;
+- using the compile-only direct-image variant;
+- repeated power cycling after an unexplained failure;
+- treating a valid checksum or reference hash as proof of hardware safety.

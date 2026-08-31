@@ -1,6 +1,7 @@
-THIS IS A STAGE-ONE, UNTESTED A1099 BRING-UP IMAGE.
+THIS IS A REVERSIBLE A1099 PHASE-0 BOARD PROBE, NOT A PRODUCTION OS IMAGE.
 
-Do not install it as the only OSOS image. Use a reversible loader path and keep
-an off-device, hash-verified firmware-partition backup. A successful build and
-valid ipco checksum do not prove LCD, power, storage, or recovery behavior on
-physical hardware.
+The source reproduces the previously successful type-0 handoff probe, but every
+new CI artifact must still be tested on the physical device before it is called
+qualified. Never install it as the only OSOS image. Keep an off-device,
+hash-verified firmware-partition backup and use tools/handoff.py so the current
+working rockbox.ipod can be restored through boot-ROM disk mode.

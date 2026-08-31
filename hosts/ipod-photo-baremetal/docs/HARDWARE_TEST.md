@@ -1,62 +1,63 @@
-# Stage-one hardware test sheet
+# Phase-0 A1099 hardware test sheet
 
-This image is untested and must remain reversible.
+Test the exact CI artifact from the commit being evaluated. The previously
+successful reference image is 5,360 bytes with SHA-256
+`652f4c86030a02f010603a015fb78bd18f3cbbd657e8313dd365cef1f45af141`.
+A candidate with any other hash is a new build and must be reported with its
+actual hash.
 
 ## Before boot
 
-Record:
-
 ```text
-Device: A1099 / M9829 60 GB
-Storage: iFlash + 64 GB SD
-Format: Windows/MBR/FAT32
-Firmware backup path:
-Firmware backup SHA-256:
-Current known-good .ipod SHA-256:
-Bring-up .ipod SHA-256:
+Device model/capacity:
+Storage adapter/media:
+Commit SHA:
+Workflow run:
+Artifact name:
+Candidate .ipod bytes:
+Candidate .ipod SHA-256:
+Firmware backup path and SHA-256:
+Current working rockbox.ipod backup path and SHA-256:
 Select + Play disk mode confirmed: yes/no
+handoff.py install and status succeeded: yes/no
 ```
 
-The captured current working `rockbox.ipod` SHA-256 is:
+Do not write the probe to OSOS. Keep the current working boot file and complete
+firmware backup off-device.
+
+## Expected display and controls
+
+- framebuffer is stable and all four edges are visible;
+- five bottom squares map to Menu, Left, Select, Right, and Play;
+- the wheel marker follows absolute wheel position and indicates touch;
+- the controller-status chip reports valid packets;
+- the panel bits report type 0 on the P98/M9829 target;
+- Hold produces the red center band and suppresses the reboot chord;
+- Select cycles framebuffer patterns;
+- the upper-right heartbeat moves;
+- Menu + Play held for two seconds resets the SoC.
+
+## Result
 
 ```text
-8dc29b572f0eeee69dfc9471fe6fae6beb2bf9ec35f15d6ffa3fb9b67e26f3d7
-```
-
-Keep the known-good boot file and firmware-partition backup off-device. Do not
-write stage one directly into the only OSOS slot.
-
-## Expected screen
-
-1. Red, green, blue bands are in that order.
-2. The full white outer frame is visible on all four edges.
-3. The black crosshair is centered.
-4. The lower-right liveness box toggles.
-5. Menu/Left/Select/Right/Play each light exactly one top box.
-6. Clockwise wheel movement flashes yellow; counter-clockwise flashes cyan.
-7. Hold makes the lower-left box orange and suppresses the reboot chord.
-8. The two lower-center panel boxes are both black on this P98/M9829 because
-   interface revision `0x00060000` selects panel type 0.
-9. Menu + Play for two seconds reboots.
-
-## Report back
-
-Photograph the screen and record:
-
-```text
-Boot method:
-Boot success/failure:
-Panel bits (two lower-center boxes, left=bit0, right=bit1):
-Color order:
-Orientation/mirroring:
-Missing rows/columns:
-Each button:
-Wheel CW/CCW:
+Normal bootloader handoff occurred:
+Backlight on:
+Visible framebuffer:
+RGB order/orientation/all edges:
+Heartbeat:
+Menu/Left/Select/Right/Play:
+Wheel CW/CCW/touch:
 Hold:
-Reboot chord:
-Number of repeated boots:
-Unexpected disk/USB/battery behavior:
+Select pattern change:
+Menu+Play reset:
+Cold boots completed:
+Warm boots completed:
+Unexpected disk/USB/battery/power behavior:
+Select+Play disk-mode recovery:
+handoff.py restore succeeded:
+Restored rockbox.ipod SHA-256:
+Photo/video link:
 ```
 
-A failed or blank display is not permission to try direct OSOS installation.
-Return to the known-good image through the confirmed recovery path.
+Stop after any unexplained storage, USB, battery, or power behavior. Restore the
+original file before another experiment.

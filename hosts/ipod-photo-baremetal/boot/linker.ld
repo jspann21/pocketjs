@@ -6,7 +6,11 @@ MEMORY {
 }
 
 SECTIONS {
+    . = ORIGIN(SDRAM);
+
     .text : ALIGN(4) {
+        KEEP(*(.text.vectors))
+        KEEP(*(.text.handoff))
         KEEP(*(.text.startup))
         *(.text*)
         *(.rodata*)
@@ -20,22 +24,29 @@ SECTIONS {
         . = ALIGN(4);
     } > SDRAM
 
-    .bss (NOLOAD) : ALIGN(16) {
+    __image_end = .;
+
+    .bss (NOLOAD) : ALIGN(4) {
         __bss_start = .;
         *(.bss*)
         *(COMMON)
-        . = ALIGN(16);
+        . = ALIGN(4);
         __bss_end = .;
     } > SDRAM
 
     .noinit (NOLOAD) : ALIGN(16) {
-        __noinit_start = .;
         *(.noinit*)
         . = ALIGN(16);
-        __noinit_end = .;
     } > SDRAM
 
-    __image_end = .;
+    .stack (NOLOAD) : ALIGN(16) {
+        __stack_bottom = .;
+        . += 64K;
+        __stack_top = .;
+    } > SDRAM
+
+    __heap_start = ALIGN(., 16);
+    __ram_end = ORIGIN(SDRAM) + LENGTH(SDRAM);
 
     /DISCARD/ : {
         *(.ARM.attributes)
@@ -47,17 +58,6 @@ SECTIONS {
     }
 }
 
-/* PP5020 exposes 96 KiB of firmware-usable IRAM at 0x40000000. */
-_remap_stub_base = 0x40000000;
-_und_stack_top   = 0x40000600;
-_abt_stack_top   = 0x40000800;
-_fiq_stack_top   = 0x40000a00;
-_panic_stack_top = 0x40001200;
-_stack_limit     = 0x40002000;
-_irq_stack_top   = 0x40018000;
-_stack_top       = 0x40017c00;
-
-ASSERT(_stack_top > _stack_limit, "supervisor stack is empty")
-ASSERT(__image_end < 0x01f00000, "image leaves no bounded heap/work area")
-ASSERT(SIZEOF(.text) + SIZEOF(.data) < 0x00800000,
-       "loaded image unexpectedly exceeds 8 MiB")
+ASSERT(_start == ORIGIN(SDRAM), "A1099 image entry must be offset zero")
+ASSERT(__heap_start < __ram_end, "A1099 static image exhausted SDRAM")
+ASSERT(__image_end < 0x01000000, "probe image unexpectedly exceeds 16 MiB")

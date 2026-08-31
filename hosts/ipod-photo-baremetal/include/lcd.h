@@ -1,0 +1,14 @@
+#ifndef POCKETJS_IPOD_PHOTO_LCD_H
+#define POCKETJS_IPOD_PHOTO_LCD_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+bool lcd_init(void);
+bool lcd_present(const uint16_t *pixels, size_t pixel_count);
+bool lcd_ready(void);
+uint8_t lcd_panel_type(void);
+uint16_t lcd_rgb565_swapped(uint8_t r, uint8_t g, uint8_t b);
+
+#endif

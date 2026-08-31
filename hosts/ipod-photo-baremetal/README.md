@@ -1,91 +1,88 @@
-# PocketJS iPod Photo A1099 — standalone firmware stage 1
+# PocketJS iPod Photo A1099 — standalone Phase 0
 
-This tree is the first **no-Rockbox runtime** artifact for PocketJS on the
-220×176 iPod Photo/Color A1099 (PortalPlayer PP5020). It builds a flat ARMv4T
-OS image and a standard `ipco` transport wrapper. It does not link Rockbox,
-call the Rockbox plugin ABI, use a Rockbox scheduler, or depend on a Rockbox
-framebuffer, filesystem, allocator, or driver after control is transferred.
+This directory contains the first **no-Rockbox-runtime** layer of the PocketJS
+port for the 220×176 iPod Photo/Color A1099 (PortalPlayer PP5020). It builds an
+original freestanding ARMv4T board probe and an `ipco` transport wrapper for a
+reversible file-level bootloader handoff.
 
-Stage 1 is deliberately a board bring-up image, not QuickJS yet. It proves the
-boot and display/input substrate that the complete PocketJS host will sit on:
+The default build is intentionally the same type-0 handoff path that produced
+the successful physical probe:
 
-- entry at image offset zero;
+```text
+pocketjs-a1099-probe.ipod
+reference bytes:   5,360
+reference SHA-256: 652f4c86030a02f010603a015fb78bd18f3cbbd657e8313dd365cef1f45af141
+```
+
+The reference hash is a reproducibility sentinel, not permission to direct-
+flash the firmware partition. The exact CI artifact selected for testing must
+still pass the reversible hardware checklist.
+
+## What Phase 0 owns
+
+- eight ARM vectors at image offset zero;
+- the `Rockbox\x01` compatibility tag at payload offset `0x20` for the installed
+  file loader, with reset code at `0x100`;
 - CPU/COP discrimination and a bounded COP-sleep gate;
-- SDRAM remap from native `0x10000000` to link address zero;
-- eight live ARM vectors and separate exception-mode IRAM stacks;
-- `.noinit` crash evidence across warm reboot when the loader preserves RAM;
-- cache and IRQs held off until their ownership is qualified;
-- A1099 panel selection from the boot-ROM interface revision plus GPIO straps;
-- synchronous 220×176 RGB565-swapped submission;
-- click-wheel, buttons, and Hold polling;
-- Menu + Play held for two seconds requests a hardware reboot;
-- exact `ipco` checksum packaging and independent ELF/image verification.
+- bounded inherited-cache clean, cache disable, and IRAM-resident SDRAM remap;
+- separate exception stacks, `.noinit` crash evidence, and a guarded main stack;
+- type-0 A1099 LCD transfer with bounded FIFO waits and 65,536-byte splitting;
+- backlight, click-wheel, buttons, Hold, heartbeat, and reset-chord diagnostics;
+- exact `ipco` packaging, ELF/image validation, and atomic install/restore tools.
 
-## Build
+It does not link Rockbox, call Rockbox services, mount storage, manage charging,
+or run QuickJS yet. The installed bootloader is used only to load the file and
+jump to offset zero.
 
-LLVM 17.0.6 is the reproducible CI toolchain:
+## Build and verify
+
+The CI workflow pins LLVM and builds the default P98/M9829 type-0 handoff image.
+A local LLVM 17 toolchain can run the same gates:
 
 ```sh
-make
+make clean
+make all
+make test
 ```
 
 Outputs are written under `build/`:
 
 ```text
-pocketjs-a1099-bringup.elf
-pocketjs-a1099-bringup.bin
-pocketjs-a1099-bringup.ipod
-pocketjs-a1099-bringup.map
-pocketjs-a1099-bringup.dis
-SHA256SUMS.txt
+pocketjs-a1099-probe.elf
+pocketjs-a1099-probe.bin
+pocketjs-a1099-probe.ipod
+pocketjs-a1099-probe.map
+pocketjs-a1099-probe.dis
 ```
 
-`make check` verifies the ELF architecture, entry, load bounds, absence of
-dynamic/relocation sections, exact flat-image reproduction, all eight vector
-branches, and the `ipco` model/checksum/padding contract. Host-side tooling is
-covered by standard-library unit tests.
+The verifier checks vector targets, reset and handoff offsets, the copied remap
+stub, cache-clean ordering, relocation/undefined-symbol absence, stored-image
+and RAM bounds, wrapper checksum/model, and exact wrapper/body identity. Host
+tests cover the packer, click-wheel decoder, Windows-safe transaction state,
+interrupted-install recovery, and restore.
 
-## Diagnostic screen
+Other compile paths remain gated but are not first-test artifacts:
 
-- The screen is divided into red, green, and blue bands.
-- A white outer frame and black crosshair expose orientation and edge loss.
-- Five top boxes are Menu, Left, Select, Right, and Play.
-- The center box flashes yellow for clockwise and cyan for counter-clockwise.
-- The lower-left box is orange while Hold is active.
-- The lower-right box toggles every 500 ms as a liveness marker.
-- Two lower-center boxes show the selected panel type in binary. On the
-  verified P98/M9829 interface revision `0x00060000`, both remain black
-  because the selected type is 0.
-
-## Safety status
-
-**Not hardware-tested. Do not install this as the only OSOS image.**
-
-The first run is specifically the FAT32 file-loading path documented in
-`docs/REVERSIBLE_BOOT.md`. The installed iPod bootloader verifies the wrapper,
-loads the payload at `0x10000000`, and then leaves the stage-one runtime; no
-Rockbox code or service remains in use. The firmware partition and OSOS remain
-unchanged.
-
-This image intentionally preserves loader-qualified clocks and peripheral
-state. Cold LCD power-up, battery/charging, ATA/FAT32, USB/disk mode, cache,
-interrupts, shutdown, and recovery-package ownership are later gates.
-
-The stage-one path is:
-
-```text
-Apple boot ROM
-    -> installed file loader
-    -> this crt0
-    -> independent PP5020/A1099 HAL
-    -> diagnostic main loop
+```sh
+make clean LCD_TYPE=-1 all test       # GPIO-detected fallback
+make clean HANDOFF_SIGNATURE=0 all test  # direct-image compile path only
 ```
 
-The final path will be:
+## Reversible device test
 
-```text
-Apple boot ROM -> PocketJS A1099 firmware -> embedded/recoverable .pocket app
+Use `tools/handoff.py`; do not replace `rockbox.ipod` manually:
+
+```sh
+python3 tools/handoff.py install --mount /path/to/IPOD \
+  --probe build/pocketjs-a1099-probe.ipod
+python3 tools/handoff.py status --mount /path/to/IPOD
 ```
 
-Read `docs/REVERSIBLE_BOOT.md`, `docs/HARDWARE_GATES.md`, and
-`docs/HARDWARE_TEST.md` before using the binary on a device.
+After the test, enter boot-ROM disk mode and restore:
+
+```sh
+python3 tools/handoff.py restore --mount /path/to/IPOD
+```
+
+Read `docs/HARDWARE_TEST.md`, `docs/REVERSIBLE_BOOT.md`, and
+`docs/HARDWARE_GATES.md` before copying an artifact to the device.
