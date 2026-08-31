@@ -1,0 +1,40 @@
+name: iPod Photo bare-metal stage 1
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "hosts/ipod-photo-baremetal/**"
+      - ".github/workflows/ipod-photo-baremetal.yml"
+  pull_request:
+    paths:
+      - "hosts/ipod-photo-baremetal/**"
+      - ".github/workflows/ipod-photo-baremetal.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LLVM tools
+        run: sudo apt-get update && sudo apt-get install -y clang lld llvm make python3
+      - name: Build and verify
+        run: make -C hosts/ipod-photo-baremetal
+      - name: Upload untested bring-up artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketjs-a1099-stage1-UNTESTED
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.elf
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.bin
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.ipod
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.map
+            hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.dis
+            hosts/ipod-photo-baremetal/build/SHA256SUMS.txt
+            hosts/ipod-photo-baremetal/UNTESTED-HARDWARE.txt
+            hosts/ipod-photo-baremetal/docs/HARDWARE_TEST.md
