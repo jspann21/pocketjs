@@ -118,8 +118,16 @@ bool a1099_lcd_init(void) {
     mmio_set32(PP_DEVICE_ENABLE, PP_DEVICE_LCD);
     mmio_clear32(PP_DEVICE_RESET, PP_DEVICE_LCD);
 
-    uint32_t straps = mmio_read32(PP_GPIOA_INPUT_VALUE);
-    panel_type = (straps & 0x02u) | ((straps & 0x10u) >> 4);
+    uint32_t revision = mmio_read32(PP_IPOD_HW_REVISION);
+    a1099_crash_record.reserved[0] = revision;
+    if (revision == 0x00060000u) {
+        /* The P98/M9829 interface revision is the original Photo panel and
+         * must not be classified from the later GPIO strap scheme. */
+        panel_type = 0u;
+    } else {
+        uint32_t straps = mmio_read32(PP_GPIOA_INPUT_VALUE);
+        panel_type = (straps & 0x02u) | ((straps & 0x10u) >> 4);
+    }
     a1099_crash_record.lcd_type = panel_type;
     a1099_crash_record.last_phase = 2u;
 
