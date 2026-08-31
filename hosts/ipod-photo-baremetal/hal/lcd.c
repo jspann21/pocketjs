@@ -95,19 +95,20 @@ static bool write_pairs(const uint32_t *pairs, uint32_t pixel_count) {
 }
 
 void a1099_backlight_set(uint8_t brightness) {
-    mmio_set32(PP_GPIOB_ENABLE, 0x0cu);
-    mmio_set32(PP_GPIOB_OUTPUT_EN, 0x0cu);
+    /* The loader already qualified B02/B03 direction. Touch only the known
+     * enable/value bits and leave neighbouring click-wheel pins unchanged. */
+    gpio_set32(PP_GPIOB_ENABLE, 0x0cu);
     mmio_clear32(PP_GPO32_ENABLE, 0x02000000u);
     mmio_set32(PP_DEVICE_ENABLE, PP_DEVICE_PWM);
 
     if (brightness == 0u) {
         mmio_write32(PP_PWM0_DUTY, 0x80000000u);
-        mmio_clear32(PP_GPIOB_OUTPUT_VALUE, 0x08u);
+        gpio_clear32(PP_GPIOB_OUTPUT_VALUE, 0x08u);
         return;
     }
 
     mmio_write32(PP_PWM0_DUTY, 0x80000000u | ((uint32_t)brightness << 16));
-    mmio_set32(PP_GPIOB_OUTPUT_VALUE, 0x08u);
+    gpio_set32(PP_GPIOB_OUTPUT_VALUE, 0x08u);
 }
 
 uint32_t a1099_lcd_type(void) {
