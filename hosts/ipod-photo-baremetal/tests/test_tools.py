@@ -52,6 +52,9 @@ class VectorTests(unittest.TestCase):
     def test_branch_with_link_rejected(self):
         self.assertIsNone(verify_image.decode_arm_b(0xEB000006, 0))
 
+    def test_conditional_branch_rejected(self):
+        self.assertIsNone(verify_image.decode_arm_b(0x1A000006, 0))
+
     def test_non_branch_rejected(self):
         self.assertIsNone(verify_image.decode_arm_b(0xE1A00000, 0))
 
