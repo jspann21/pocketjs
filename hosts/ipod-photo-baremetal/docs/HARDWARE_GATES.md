@@ -1,41 +1,40 @@
 # Hardware gates before direct OSOS installation
 
-## Stage 1: reversible bring-up
+## Stage 1 — reversible bring-up
 
-1. Verify a complete firmware-partition backup and SHA-256 off-device.
-2. Confirm boot-ROM disk mode works before modifying the firmware partition.
-3. Chainload the image or retain a known-good alternate OSOS path.
-4. Cold/warm boot at least 20 times.
-5. Confirm all four known panel-type strap values either render correctly or
-   fail without a destructive register loop.
-6. Validate red/green/blue ordering and every row/column edge.
-7. Validate all buttons, both wheel directions and Hold.
-8. Hold Menu + Play for two seconds and confirm a clean reboot.
-9. Inject undefined and data-abort test builds; confirm repeatable reboot and a
-   valid `.noinit` crash record under a debugger/instrumented follow-up image.
+- Verify a complete firmware-partition backup and SHA-256 off-device.
+- Confirm Select + Play disk mode before changing any boot artifact.
+- Use a reversible alternate-image path; do not make this the only OSOS.
+- Verify the `ipco` SHA-256 against `build/SHA256SUMS.txt` after copying.
+- Cold/warm boot repeatedly and record the detected panel strap value.
+- Validate RGB ordering, all four edges, buttons, wheel directions, and Hold.
+- Confirm Menu + Play held for two seconds reboots.
+- Test each known panel family only through a reversible loader.
+- Do not test fault-injection builds until a debugger or persistent evidence
+  reader exists.
 
-## Stage 2: full board support
+## Stage 2 — complete A1099 board support
 
-Required before PocketJS replaces OSOS directly:
+Required before direct OSOS replacement:
 
-- cold LCD/panel wake and sleep independent of inherited loader state;
+- cold LCD wake/sleep independent of inherited loader state;
 - timer IRQ and bounded scheduler;
-- cache enable/clean/invalidate ownership tests;
-- PCF50605 battery, charge, USB-power and low-voltage state machine;
-- disk-safe shutdown;
-- ATA PIO plus partition and FAT32 read-only support;
+- cache enable/clean/invalidate qualification;
+- PCF50605 battery, charging, USB-power, and low-voltage state machine;
+- disk-safe shutdown and reboot-to-disk-mode path;
+- ATA PIO, partition discovery, and FAT32 read-only support;
 - embedded recovery `.pocket` package;
-- package failure lineage: pending → active → last-good → embedded;
-- installer backup, bounds checks, sector-aligned write and full read-back;
-- at least 100 recovery cycles without loss of disk mode.
+- pending -> active -> last-good -> embedded failure lineage;
+- independent installer with backup, bounds checks, aligned writes, complete
+  read-back comparison, and restore;
+- repeated recovery tests without losing boot-ROM disk mode.
 
-## Stage 3: PocketJS runtime
+## Stage 3 — PocketJS runtime
 
-Only after Stage 2:
-
-- native allocator with hard image/stack/framebuffer bounds;
+- bounded native allocator with image/stack/framebuffer guards;
 - target-thinned package admission;
-- QuickJS with explicit stack and memory limits;
-- retained PocketJS core and RGB565 damage renderer;
+- QuickJS with explicit heap and stack limits;
+- retained `pocketjs-core` and RGB565 damage rendering;
 - fixed 60 Hz simulation with independently paced LCD presentation;
-- fault/JS exception recovery to the embedded package.
+- JS/native fault recovery to the embedded package;
+- capabilities advertised only after the whole observable contract passes.
