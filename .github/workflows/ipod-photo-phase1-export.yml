@@ -1,0 +1,38 @@
+name: Temporary iPod Photo Phase 1 source export
+
+on:
+  push:
+    branches:
+      - feature/ipod-photo-phase1-kernel
+    paths:
+      - .github/workflows/ipod-photo-phase1-export.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact branch commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+
+      - name: Create deterministic source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz --output="pocketjs-source-${GITHUB_SHA}.tar.gz" HEAD
+          sha256sum "pocketjs-source-${GITHUB_SHA}.tar.gz" > SOURCE_SHA256.txt
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pocketjs-source-${{ github.sha }}
+          path: |
+            pocketjs-source-${{ github.sha }}.tar.gz
+            SOURCE_SHA256.txt
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
