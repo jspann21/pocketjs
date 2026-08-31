@@ -31,19 +31,29 @@ jobs:
           python3 --version
       - name: Build and verify
         run: make -C hosts/ipod-photo-baremetal CLANG=clang OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump
-      - name: Upload untested bring-up artifacts
+      - name: Upload self-contained untested bring-up kit
         uses: actions/upload-artifact@v4
         with:
           name: pocketjs-a1099-stage1-UNTESTED
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true
           path: |
+            hosts/ipod-photo-baremetal/Makefile
+            hosts/ipod-photo-baremetal/.gitignore
+            hosts/ipod-photo-baremetal/README.md
+            hosts/ipod-photo-baremetal/UNTESTED-HARDWARE.txt
+            hosts/ipod-photo-baremetal/boot
+            hosts/ipod-photo-baremetal/include
+            hosts/ipod-photo-baremetal/hal
+            hosts/ipod-photo-baremetal/kernel
+            hosts/ipod-photo-baremetal/lib
+            hosts/ipod-photo-baremetal/tools
+            hosts/ipod-photo-baremetal/tests
+            hosts/ipod-photo-baremetal/docs
             hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.elf
             hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.bin
             hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.ipod
             hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.map
             hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.dis
             hosts/ipod-photo-baremetal/build/SHA256SUMS.txt
-            hosts/ipod-photo-baremetal/UNTESTED-HARDWARE.txt
-            hosts/ipod-photo-baremetal/docs/REVERSIBLE_BOOT.md
-            hosts/ipod-photo-baremetal/docs/HARDWARE_TEST.md
