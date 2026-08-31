@@ -1,25 +1,29 @@
 # Stage-one validation record
 
-The checked-in source was built twice from clean trees with LLVM 17 using the
-freestanding ARM7TDMI flags in `Makefile`. Both runs produced byte-identical
-artifacts. No A1099 hardware execution is claimed.
+Built twice from clean trees with LLVM 17.0.0. Both builds were byte-identical.
+No hardware execution is claimed.
 
 ```text
-ELF     73,344 bytes  db54a823543c9263535468c3803a08d2f473e30e0b92d92c00765e6d4ad16152
-BIN      4,464 bytes  7126a8551190ba16b09e38ccdd4ebca5e31be6777c4c55fcbaab21f070a5ba8c
-IPOD     4,472 bytes  4004d02982febb9d09935391d7dc9174d2c9aa833c1c5ef5b3064650744b1df9
-MAP      9,890 bytes  edff032e8e064a8f7d13b5ee0a10692509a3893887bf8a376d8282410b8265fd
-DIS     53,081 bytes  fe18b6ea4ce9af706742d548ba96c17e2bbef292dd94bf6dfc2a02bfd05b3732
+ELF   73,016 bytes  28ffac5efeb86aecb5dc9a4a980b1b3b6a4efd8464a5b5035889e522f29cf7c3
+BIN    4,420 bytes  d7e18735c825598eb75c8df25337dda3f35f7f32680896d06df545a78e543e17
+IPOD   4,428 bytes  e6940bd944317e2c8bb12d130146a46c76e9bda0677be986d5cc53e8ca0eef51
+MAP    9,016 bytes  799b87eab3ef530196b3a323585ee72ab26269ccb2fc311b66ec05d462d1bbfa
+DIS   53,170 bytes  7f84346c0c99eafcb48eb327e3a346a4f2ad89a72f35f08af7aef61028d9228e
 ```
 
-The verifier checked:
+The verifier established:
 
-- ELF32 little-endian ARM executable, entry address zero;
-- at least one `PT_LOAD` beginning at zero and no load extent above 32 MiB;
-- no dynamic/interpreter program headers or relocation/dynamic sections;
-- exact reproduction of all file-backed load segments in the flat binary;
+- ELF32 little-endian ARM executable with entry address zero;
+- two bounded `PT_LOAD` segments, the first at address zero;
+- no interpreter, dynamic program header, or relocation/dynamic section;
+- exact reproduction of every file-backed load byte in the flat image;
 - ARM B/BL instructions in all eight vector slots;
-- `ipco` model bytes and additive checksum seed 3;
-- exact image bytes followed only by required zero padding;
-- four standard-library host tests for packaging, directory parsing and ZIP
-  inventory.
+- no undefined symbols;
+- standard `ipco` model bytes and checksum seed 3;
+- exact image payload followed only by four-byte alignment padding;
+- deterministic second clean build;
+- host unit tests for packaging and firmware-directory metadata.
+
+The actual 5.1.2.1 reference image was also passed through the metadata parser;
+its size, SHA-256, OSOS offset/length/load address, and OSOS additive checksum
+matched the independently derived evidence in `FIRMWARE_REFERENCE.md`.
