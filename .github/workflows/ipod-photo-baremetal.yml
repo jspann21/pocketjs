@@ -45,4 +45,5 @@ jobs:
             hosts/ipod-photo-baremetal/build/pocketjs-a1099-bringup.dis
             hosts/ipod-photo-baremetal/build/SHA256SUMS.txt
             hosts/ipod-photo-baremetal/UNTESTED-HARDWARE.txt
+            hosts/ipod-photo-baremetal/docs/REVERSIBLE_BOOT.md
             hosts/ipod-photo-baremetal/docs/HARDWARE_TEST.md
