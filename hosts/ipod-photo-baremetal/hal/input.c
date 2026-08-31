@@ -21,8 +21,8 @@ void a1099_input_init(void) {
     mmio_write32(PP_WHEEL_CONTROL1, 0x01000000u);
     wheel_rearm();
 
-    mmio_set32(PP_GPIOA_ENABLE, 0x20u);
-    mmio_clear32(PP_GPIOA_OUTPUT_EN, 0x20u);
+    gpio_set32(PP_GPIOA_ENABLE, 0x20u);
+    gpio_clear32(PP_GPIOA_OUTPUT_EN, 0x20u);
     a1099_crash_record.last_phase = 3u;
 }
 
