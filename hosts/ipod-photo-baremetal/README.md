@@ -40,8 +40,9 @@ build/pocketjs-a1099-bringup.ipod
 build/pocketjs-a1099-bringup.map
 ```
 
-`make check` verifies the ARM reset branch, transport model/checksum, exact
-zero-padded payload, and host-side tool tests.
+`make check` verifies the ELF architecture/entry/load segments, all eight ARM
+vector branches, absence of dynamic/relocation sections, exact flat-image
+contents, transport model/checksum, zero padding, and host-side tool tests.
 
 ## What the screen means
 
