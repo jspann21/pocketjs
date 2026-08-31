@@ -48,8 +48,8 @@ $(IPOD): $(BIN) tools/pack_ipod.py
 	$(PYTHON) tools/pack_ipod.py $(BIN) $@
 
 check: $(BIN) $(IPOD)
-	$(PYTHON) tools/verify_image.py $(BIN) $(IPOD)
-	$(PYTHON) -m pytest -q tests
+	$(PYTHON) tools/verify_image.py $(ELF) $(BIN) $(IPOD)
+	$(PYTHON) -m unittest discover -s tests -v
 
 $(BUILD)/pocketjs-a1099-bringup.dis: $(ELF)
 	$(OBJDUMP) -d -r $< > $@
