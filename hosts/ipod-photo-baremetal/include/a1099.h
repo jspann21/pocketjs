@@ -44,6 +44,9 @@
 
 #define PP_MMAP0_LOGICAL      0xf000f000u
 #define PP_MMAP0_PHYSICAL     0xf000f004u
+/* The bootloader maps the iPod boot ROM at 0x20000000. Non-video iPods keep
+ * the interface revision word at ROM offset 0x2084. */
+#define PP_IPOD_HW_REVISION   0x20002084u
 
 #define PP_DEVICE_SYSTEM      0x00000004u
 #define PP_DEVICE_OPTO        0x00010000u
