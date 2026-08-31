@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,12 +14,14 @@ def load(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
 
 pack_ipod = load("pack_ipod", ROOT / "tools" / "pack_ipod.py")
 firmware_evidence = load("firmware_evidence", ROOT / "tools" / "firmware_evidence.py")
+verify_image = load("verify_image", ROOT / "tools" / "verify_image.py")
 
 
 class PackTests(unittest.TestCase):
@@ -33,6 +36,24 @@ class PackTests(unittest.TestCase):
     def test_empty_image_rejected(self):
         with self.assertRaises(ValueError):
             pack_ipod.pack(b"")
+
+
+class VectorTests(unittest.TestCase):
+    def test_forward_arm_branch(self):
+        # At address zero, PC is 8; immediate 6 reaches 0x20.
+        self.assertEqual(verify_image.decode_arm_b(0xEA000006, 0), 0x20)
+
+    def test_backward_arm_branch_sign_extension(self):
+        address = 0x100
+        target = 0x20
+        immediate = ((target - (address + 8)) >> 2) & 0x00FFFFFF
+        self.assertEqual(verify_image.decode_arm_b(0xEA000000 | immediate, address), target)
+
+    def test_branch_with_link_rejected(self):
+        self.assertIsNone(verify_image.decode_arm_b(0xEB000006, 0))
+
+    def test_non_branch_rejected(self):
+        self.assertIsNone(verify_image.decode_arm_b(0xE1A00000, 0))
 
 
 class FirmwareEvidenceTests(unittest.TestCase):
