@@ -1,0 +1,127 @@
+name: iPod Photo qualified Phase 1 direct build
+
+on:
+  push:
+    branches:
+      - feature/ipod-photo-phase1-qualified
+    paths:
+      - hosts/ipod-photo-baremetal/**
+      - engine/core/**
+      - .github/workflows/ipod-photo-phase1-qualified.yml
+  pull_request:
+    paths:
+      - hosts/ipod-photo-baremetal/**
+      - engine/core/**
+      - .github/workflows/ipod-photo-phase1-qualified.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.2.1-jammy@sha256:6e33c70a59180c9b518f67728538312975cb3891177d20215cd2e31bdfe70791
+    env:
+      QUICKJS_REVISION: ba5bdd0dc013518768e76cd9e05cd30ed53dd35b
+      RUST_TOOLCHAIN: nightly-2026-07-02
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Verify clean-source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e hosts/ipod-photo-baremetal/src/fat32.c
+          test -e hosts/ipod-photo-baremetal/src/storage.c
+          test -e hosts/ipod-photo-baremetal/src/qjs_runtime.c
+          test -e hosts/ipod-photo-baremetal/docs/PHASE1_QUALIFICATION.md
+          test ! -e .github/phase1-small
+          test ! -e .github/ipod-phase1-storage.patch.gz.b64
+          test ! -e .github/ipod-phase1-runtime-hold.patch.gz.b64
+          grep -F 'PJS_QJS_FRAME_BUDGET_US 100000u' hosts/ipod-photo-baremetal/src/qjs_runtime.c
+          grep -F 'PJS_RUNTIME_READY_DISK' hosts/ipod-photo-baremetal/include/core_bridge.h
+          grep -F '220.0, 8.0, abgr(230, 12, 32, 255)' hosts/ipod-photo-baremetal/rust-core/src/lib.rs
+          git diff --check
+
+      - name: Install pinned build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            ca-certificates curl gcc git make patch \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi libnewlib-dev
+          rm -rf /var/lib/apt/lists/*
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rust-src
+          printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          printf 'RUSTUP_TOOLCHAIN=%s\n' "$RUST_TOOLCHAIN" >> "$GITHUB_ENV"
+
+      - name: Fetch pinned QuickJS and assemble ARMv4T sysroot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/pocket-stack/quickjs-rs.git /tmp/quickjs-rs
+          git -C /tmp/quickjs-rs checkout "$QUICKJS_REVISION"
+          test "$(git -C /tmp/quickjs-rs rev-parse HEAD)" = "$QUICKJS_REVISION"
+          test "$(cat /tmp/quickjs-rs/libquickjs-sys/embed/quickjs/VERSION)" = '2026-06-04'
+          SYSROOT=/tmp/armv4t-sysroot
+          mkdir -p "$SYSROOT/include" "$SYSROOT/libgcc" "$SYSROOT/newlib"
+          cp -a /usr/include/newlib/. "$SYSROOT/include/"
+          cp "$(arm-none-eabi-gcc -mcpu=arm7tdmi -marm -mfloat-abi=soft -print-libgcc-file-name)" "$SYSROOT/libgcc/libgcc.a"
+          cp "$(arm-none-eabi-gcc -mcpu=arm7tdmi -marm -mfloat-abi=soft --specs=nano.specs -print-file-name=libc_nano.a)" "$SYSROOT/newlib/libc_nano.a"
+          cp "$(arm-none-eabi-gcc -mcpu=arm7tdmi -marm -mfloat-abi=soft -print-file-name=libm.a)" "$SYSROOT/newlib/libm.a"
+
+      - name: Verify pinned compilers
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang --version | tee TOOLCHAIN.txt
+          ld.lld --version | tee -a TOOLCHAIN.txt
+          llvm-objcopy --version | head -3 | tee -a TOOLCHAIN.txt
+          arm-none-eabi-gcc --version | head -1 | tee -a TOOLCHAIN.txt
+          rustc --version --verbose | tee -a TOOLCHAIN.txt
+          cargo --version | tee -a TOOLCHAIN.txt
+          clang --version | grep -F '10999b6d034fe318f3d56c83bddb6572593a8bb0'
+          ld.lld --version | grep -F '17.0.0'
+          rustc --print target-list | grep -Fx armv4t-none-eabi
+
+      - name: Build and test clean source directly
+        shell: bash
+        run: |
+          set -euo pipefail
+          H=hosts/ipod-photo-baremetal
+          Q=/tmp/quickjs-rs/libquickjs-sys/embed/quickjs
+          S=/tmp/armv4t-sysroot
+          make -C "$H" CC=clang clean all test 2>&1 | tee phase0-regression.log
+          make -C "$H" -f Makefile.phase1 \
+            QUICKJS_SRC="$Q" NEWLIB_SYSROOT="$S" \
+            IMAGE_NAME=pocketjs-a1099-phase1-qualified \
+            clean all test 2>&1 | tee phase1-qualified-build.log
+          E="$H/build-phase1/pocketjs-a1099-phase1-qualified.elf"
+          nm "$E" | grep -F 'PJS_CORE_BACKEND_RUST'
+          nm "$E" | grep -F ' JS_Eval'
+          nm "$E" | grep -F ' qjs_runtime_boot'
+          nm "$E" | grep -F ' pjs_storage_load_guest'
+          nm "$E" | grep -F ' pjs_fat32_mount'
+          nm "$E" | grep -F ' cache_take_ownership_enabled'
+          nm "$E" | grep -F ' power_telemetry_sample'
+
+      - name: Upload direct-build firmware
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pocketjs-a1099-phase1-qualified-${{ github.sha }}
+          path: |
+            hosts/ipod-photo-baremetal/build-phase1/pocketjs-a1099-phase1-qualified.ipod
+            hosts/ipod-photo-baremetal/build-phase1/pocketjs-a1099-phase1-qualified.elf
+            phase0-regression.log
+            phase1-qualified-build.log
+            TOOLCHAIN.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
