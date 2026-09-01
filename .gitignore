@@ -2,6 +2,7 @@
 node_modules/
 target/
 .DS_Store
+**/__pycache__/
 
 # pass-1 transform cache (content-hash keyed; safe to delete any time)
 .cache/
