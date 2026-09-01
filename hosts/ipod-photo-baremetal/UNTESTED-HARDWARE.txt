@@ -1,7 +1,10 @@
-THIS IS A REVERSIBLE A1099 PHASE-0 BOARD PROBE, NOT A PRODUCTION OS IMAGE.
+THIS TREE CONTAINS TWO REVERSIBLE A1099 HANDOFF IMAGES, NOT A PRODUCTION OS.
 
-The source reproduces the previously successful type-0 handoff probe, but every
-new CI artifact must still be tested on the physical device before it is called
-qualified. Never install it as the only OSOS image. Keep an off-device,
+The default Phase-0 target reproduces the physically qualified type-0 board
+probe. The separate Phase-1 target adds interrupts, allocation, power telemetry,
+and the real retained PocketJS core, but its exact CI-produced bytes are NOT
+hardware-qualified until the Phase-1 checklist is completed on the P98/M9829.
+
+Never install either image as the only OSOS image. Keep an off-device,
 hash-verified firmware-partition backup and use tools/handoff.py so the current
 working rockbox.ipod can be restored through boot-ROM disk mode.

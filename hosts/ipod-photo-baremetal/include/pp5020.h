@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define MMIO8(address)  (*(volatile uint8_t *)(uintptr_t)(address))
+#define MMIO16(address) (*(volatile uint16_t *)(uintptr_t)(address))
 #define MMIO32(address) (*(volatile uint32_t *)(uintptr_t)(address))
 
 /* Core identity and control. */
@@ -13,35 +15,55 @@
 #define PP_DEV_SYSTEM   0x00000004u
 
 /* Interrupt controller. */
+#define PP_CPU_INT_STAT      MMIO32(0x60004000u)
+#define PP_CPU_INT_EN_STAT   MMIO32(0x60004020u)
+#define PP_CPU_INT_EN        MMIO32(0x60004024u)
 #define PP_CPU_INT_DIS       MMIO32(0x60004028u)
 #define PP_COP_INT_DIS       MMIO32(0x60004038u)
 #define PP_INT_FORCED_CLR    MMIO32(0x6000401cu)
+#define PP_CPU_HI_INT_STAT   MMIO32(0x60004100u)
+#define PP_CPU_HI_INT_EN     MMIO32(0x60004124u)
 #define PP_CPU_HI_INT_DIS    MMIO32(0x60004128u)
 #define PP_COP_HI_INT_DIS    MMIO32(0x60004138u)
 #define PP_HI_INT_FORCED_CLR MMIO32(0x6000411cu)
 
 /* Timers and clock/reset controls. */
+#define PP_TIMER1_CFG MMIO32(0x60005000u)
+#define PP_TIMER1_VAL MMIO32(0x60005004u)
 #define PP_USEC_TIMER MMIO32(0x60005010u)
+#define PP_TIMER1_MASK 0x00000001u
 #define PP_DEV_RS     MMIO32(0x60006004u)
 #define PP_DEV_RS2    MMIO32(0x60006008u)
 #define PP_DEV_EN     MMIO32(0x6000600cu)
 #define PP_DEV_EN2    MMIO32(0x60006010u)
 #define PP_DEV_INIT1  MMIO32(0x70000010u)
 #define PP_DEV_INIT2  MMIO32(0x70000020u)
-#define PP_GPO32_VAL    MMIO32(0x70000080u)
-#define PP_GPO32_ENABLE MMIO32(0x70000084u)
+#define PP_GPO32_VAL          MMIO32(0x70000080u)
+#define PP_GPO32_ENABLE       MMIO32(0x70000084u)
+#define PP_GPO32_INPUT_VAL    MMIO32(0x70000088u)
+#define PP_GPO32_INPUT_ENABLE MMIO32(0x7000008cu)
 
+#define PP_DEV_I2C   0x00001000u
 #define PP_DEV_OPTO  0x00010000u
 #define PP_DEV_PWM   0x00020000u
 #define PP_DEV_LCD   0x04000000u
+#define PP_DEV_IDE0  0x02000000u
 #define PP_INIT_BUTTONS 0x00040000u
 
 /* Cache/MMAP. MMAP0 maps SDRAM's native 0x10000000 window to 0x00000000. */
-#define PP_CACHE_CTL       MMIO32(0x6000c000u)
-#define PP_CACHE_OPERATION MMIO32(0xf000f044u)
+#define PP_CACHE_PRIORITY   MMIO32(0x60006044u)
+#define PP_CACHE_CTL        MMIO32(0x6000c000u)
+#define PP_CACHE_MASK       MMIO32(0xf000f040u)
+#define PP_CACHE_OPERATION  MMIO32(0xf000f044u)
 #define PP_CACHE_CTL_ENABLE 0x0001u
+#define PP_CACHE_CTL_RUN    0x0002u
+#define PP_CACHE_CTL_INIT   0x0004u
+#define PP_CACHE_CTL_READY  0x4000u
 #define PP_CACHE_CTL_BUSY   0x8000u
 #define PP_CACHE_OP_FLUSH   0x0002u
+#define PP_CACHE_BYTES      0x00002000u
+#define PP_CACHE_LINE_BYTES 16u
+#define PP_NOCACHE_BASE     0x10000000u
 #define PP_MMAP0_LOGICAL   MMIO32(0xf000f000u)
 #define PP_MMAP0_PHYSICAL  MMIO32(0xf000f004u)
 #define PP_MMAP_32M_MASK   0x00003e00u
@@ -56,6 +78,8 @@
 #define PP_GPIOB_OUTPUT_VAL MMIO32(0x6000d024u)
 #define PP_GPIOA_INPUT_VAL  MMIO32(0x6000d030u)
 #define PP_GPIOB_INPUT_VAL  MMIO32(0x6000d034u)
+#define PP_GPIOC_INPUT_VAL  MMIO32(0x6000d038u)
+#define PP_GPIOD_INPUT_VAL  MMIO32(0x6000d03cu)
 
 #define PP_GPIOA_ENABLE_ATOMIC     MMIO32(0x6000d800u)
 #define PP_GPIOB_ENABLE_ATOMIC     MMIO32(0x6000d804u)
@@ -87,6 +111,29 @@ static inline void pp_gpio_clear(volatile uint32_t *atomic_reg, uint32_t mask)
 
 /* A1099 backlight PWM. */
 #define PP_PWM_BACKLIGHT MMIO32(0x7000a010u)
+
+/* PP5020 IDE host and primary ATA task file. This gate is read-only. */
+#define PP_IDE0_PRI_TIMING0 MMIO32(0xc3000000u)
+#define PP_IDE0_PRI_TIMING1 MMIO32(0xc3000004u)
+#define PP_IDE0_CFG         MMIO32(0xc3000028u)
+#define PP_ATA_DATA         MMIO16(0xc30001e0u)
+#define PP_ATA_ERROR        MMIO8(0xc30001e4u)
+#define PP_ATA_NSECTOR      MMIO8(0xc30001e8u)
+#define PP_ATA_SECTOR       MMIO8(0xc30001ecu)
+#define PP_ATA_LCYL         MMIO8(0xc30001f0u)
+#define PP_ATA_HCYL         MMIO8(0xc30001f4u)
+#define PP_ATA_SELECT       MMIO8(0xc30001f8u)
+#define PP_ATA_STATUS       MMIO8(0xc30001fcu)
+#define PP_ATA_COMMAND      MMIO8(0xc30001fcu)
+#define PP_ATA_ALT_STATUS   MMIO8(0xc30003f8u)
+#define PP_ATA_CONTROL      MMIO8(0xc30003f8u)
+
+/* PP5020 I2C controller. Registers are byte-wide and spaced by 4. */
+#define PP_I2C_CTRL      MMIO8(0x7000c000u)
+#define PP_I2C_ADDR      MMIO8(0x7000c004u)
+#define PP_I2C_DATA(index) MMIO8(0x7000c00cu + 4u * (uint32_t)(index))
+#define PP_I2C_STATUS    MMIO8(0x7000c01cu)
+#define PP_I2C_CLOCK     MMIO32(0x600060a4u)
 
 /* Synaptics/Opto click wheel controller. */
 #define PP_WHEEL_CTRL0 MMIO32(0x7000c100u)

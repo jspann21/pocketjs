@@ -1,0 +1,263 @@
+HOST := $(abspath .)
+REPO := $(abspath ../..)
+BUILD ?= $(HOST)/build-phase1
+CLANG ?= clang
+LLD ?= ld.lld
+LLVM_OBJCOPY ?= llvm-objcopy
+LLVM_OBJDUMP ?= llvm-objdump
+PYTHON ?= python3
+CC ?= cc
+CARGO ?= cargo
+PATCH ?= patch
+
+TARGET := arm-none-eabi
+CPUFLAGS := --target=$(TARGET) -mcpu=arm7tdmi -marm -mfloat-abi=soft
+COMMON := $(CPUFLAGS) -ffreestanding -fno-builtin -fno-stack-protector \
+  -fno-unwind-tables -fno-asynchronous-unwind-tables -fdata-sections \
+  -ffunction-sections -Os -Wall -Wextra -Werror -I$(HOST)/include
+LCD_TYPE ?= 0
+HANDOFF_SIGNATURE ?= 1
+CORE_BACKEND ?= rust
+POWER_TELEMETRY ?= 1
+CACHE_ENABLE ?= 1
+QUICKJS_RUNTIME ?= 1
+DEFINES := -DPJS_A1099_LCD_TYPE=$(LCD_TYPE) -DPJS_BOOTLOADER_HANDOFF=$(HANDOFF_SIGNATURE) \
+           -DPJS_PHASE1_POWER_TELEMETRY=$(POWER_TELEMETRY) \
+           -DPJS_PHASE1_CACHE_ENABLE=$(CACHE_ENABLE) \
+           -DPJS_PHASE1_QUICKJS=$(QUICKJS_RUNTIME)
+CFLAGS := $(COMMON) -std=c11 $(DEFINES)
+ASFLAGS := $(COMMON) $(DEFINES)
+VERIFY_POWER := $(if $(filter 1,$(POWER_TELEMETRY)),--require-power-telemetry,)
+VERIFY_QUICKJS := $(if $(filter 1,$(QUICKJS_RUNTIME)),--require-quickjs,)
+
+RUST_MANIFEST := $(HOST)/rust-core/Cargo.toml
+RUST_TARGET_DIR := $(BUILD)/rust-target
+RUST_LIB := $(RUST_TARGET_DIR)/armv4t-none-eabi/release/libpocketjs_ipod_photo_core.a
+
+RECOVERY_SOURCE := $(HOST)/recovery/app.js
+RECOVERY_POCKET := $(BUILD)/generated/recovery.pocket
+EMBEDDED_PACKAGE_C := $(BUILD)/generated/embedded_package.c
+EMBEDDED_PACKAGE_O := $(BUILD)/generated/embedded_package.o
+EMBEDDED_PACKAGE_STAMP := $(BUILD)/generated/.package-ready
+
+QUICKJS_SRC ?=
+QUICKJS_VERSION ?= 2026-06-04
+QUICKJS_PREPARED := $(BUILD)/third-party/quickjs
+QUICKJS_STAMP := $(QUICKJS_PREPARED)/.prepared
+QUICKJS_NAMES := quickjs dtoa libregexp libunicode cutils
+QUICKJS_OBJECTS := $(addprefix $(BUILD)/quickjs-obj/,$(addsuffix .o,$(QUICKJS_NAMES)))
+HOST_QUICKJS_OBJECTS := $(addprefix $(BUILD)/host-qjs/,$(addsuffix .o,$(QUICKJS_NAMES)))
+
+NEWLIB_SYSROOT ?=
+NEWLIB_INCLUDE ?= $(NEWLIB_SYSROOT)/include
+NEWLIB_LIBC ?= $(NEWLIB_SYSROOT)/newlib/libc_nano.a
+NEWLIB_LIBM ?= $(NEWLIB_SYSROOT)/newlib/libm.a
+NEWLIB_LIBGCC ?= $(NEWLIB_SYSROOT)/libgcc/libgcc.a
+NEWLIB_LIBS := $(NEWLIB_LIBC) $(NEWLIB_LIBM) $(NEWLIB_LIBGCC)
+
+COMMON_SOURCES := src/lcd.c src/input.c src/backlight.c src/timer.c src/panic.c src/mem.c
+PHASE1_SOURCES := src/main_phase1.c src/irq.c src/scheduler.c src/timer_irq.c \
+                  src/heap.c src/cache.c src/power.c src/fat32.c src/storage.c
+ifeq ($(QUICKJS_RUNTIME),1)
+RUNTIME_SOURCES := src/qjs_runtime.c src/libc_shim.c
+RUNTIME_DEP := $(QUICKJS_STAMP) $(QUICKJS_OBJECTS) $(NEWLIB_LIBS)
+RUNTIME_LINK := $(QUICKJS_OBJECTS) $(NEWLIB_LIBS)
+RUNTIME_INCLUDES := -isystem $(NEWLIB_INCLUDE) -isystem $(QUICKJS_PREPARED)
+RUNTIME_DEFINES := -D_GNU_SOURCE -DPJS_QUICKJS_BAREMETAL \
+                   -DCONFIG_VERSION=\"$(QUICKJS_VERSION)\"
+else
+RUNTIME_SOURCES := src/qjs_runtime_stub.c
+RUNTIME_DEP :=
+RUNTIME_LINK :=
+RUNTIME_INCLUDES :=
+RUNTIME_DEFINES :=
+endif
+
+ifeq ($(CORE_BACKEND),stub)
+CORE_SOURCE := src/core_bridge_stub.c
+CORE_DEP :=
+CORE_LINK :=
+VERIFY_BACKEND := stub
+else
+CORE_SOURCE :=
+CORE_DEP := $(RUST_LIB)
+CORE_LINK := $(RUST_LIB)
+VERIFY_BACKEND := rust
+endif
+SOURCES := $(COMMON_SOURCES) $(PHASE1_SOURCES) $(RUNTIME_SOURCES) $(CORE_SOURCE)
+OBJECTS := $(patsubst %.c,$(BUILD)/%.o,$(SOURCES)) \
+           $(EMBEDDED_PACKAGE_O) $(BUILD)/boot/crt0-phase1.o
+
+IMAGE_NAME ?= pocketjs-a1099-phase1-quickjs
+ELF := $(BUILD)/$(IMAGE_NAME).elf
+BIN := $(BUILD)/$(IMAGE_NAME).bin
+IPOD := $(BUILD)/$(IMAGE_NAME).ipod
+MAP := $(BUILD)/$(IMAGE_NAME).map
+DIS := $(BUILD)/$(IMAGE_NAME).dis
+SHA256SUMS := $(BUILD)/SHA256SUMS.txt
+
+.PHONY: all clean inspect test manifest ci rust-core c-smoke package quickjs-source
+all: $(IPOD) $(DIS) inspect manifest
+
+$(BUILD)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CLANG) $(CFLAGS) $(RUNTIME_INCLUDES) $(RUNTIME_DEFINES) -c $< -o $@
+
+$(BUILD)/src/qjs_runtime.o: src/qjs_runtime.c $(QUICKJS_STAMP)
+	@mkdir -p $(dir $@)
+	$(CLANG) $(CFLAGS) $(RUNTIME_INCLUDES) $(RUNTIME_DEFINES) -c $< -o $@
+
+$(BUILD)/boot/crt0-phase1.o: boot/crt0-phase1.S
+	@mkdir -p $(dir $@)
+	$(CLANG) $(ASFLAGS) -c $< -o $@
+
+$(EMBEDDED_PACKAGE_STAMP): $(RECOVERY_SOURCE) tools/build_embedded_pocket.py
+	@mkdir -p $(dir $@)
+	$(PYTHON) tools/build_embedded_pocket.py \
+	  --source $(RECOVERY_SOURCE) \
+	  --package $(RECOVERY_POCKET) \
+	  --c-output $(EMBEDDED_PACKAGE_C)
+	@touch $@
+
+$(RECOVERY_POCKET) $(EMBEDDED_PACKAGE_C): $(EMBEDDED_PACKAGE_STAMP)
+	@test -f $@
+
+$(EMBEDDED_PACKAGE_O): $(EMBEDDED_PACKAGE_C)
+	@mkdir -p $(dir $@)
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+package: $(RECOVERY_POCKET) $(EMBEDDED_PACKAGE_C)
+
+ifeq ($(QUICKJS_RUNTIME),1)
+$(QUICKJS_STAMP): third_party/quickjs.lock third_party/quickjs-baremetal.patch
+	@test -n "$(QUICKJS_SRC)" || { echo 'set QUICKJS_SRC=/path/to/pinned QuickJS source' >&2; exit 2; }
+	@test -f "$(QUICKJS_SRC)/quickjs.c" || { echo 'QUICKJS_SRC has no quickjs.c' >&2; exit 2; }
+	@test -f "$(QUICKJS_SRC)/VERSION" || { echo 'QUICKJS_SRC has no VERSION' >&2; exit 2; }
+	@test "$$(cat "$(QUICKJS_SRC)/VERSION")" = "$(QUICKJS_VERSION)" || { \
+	  echo 'QuickJS version does not match third_party/quickjs.lock' >&2; exit 2; }
+	@test -d "$(NEWLIB_INCLUDE)" || { echo 'set NEWLIB_SYSROOT to the ARMv4T newlib export' >&2; exit 2; }
+	@for library in $(NEWLIB_LIBS); do test -f "$$library" || { echo "missing $$library" >&2; exit 2; }; done
+	rm -rf $(QUICKJS_PREPARED)
+	mkdir -p $(QUICKJS_PREPARED)
+	cp -a $(QUICKJS_SRC)/. $(QUICKJS_PREPARED)/
+	cd $(QUICKJS_PREPARED) && $(PATCH) -p1 < $(HOST)/third_party/quickjs-baremetal.patch
+	@touch $@
+
+quickjs-source: $(QUICKJS_STAMP)
+
+$(BUILD)/quickjs-obj/%.o: $(QUICKJS_STAMP)
+	@mkdir -p $(dir $@)
+	$(CLANG) $(CPUFLAGS) -ffreestanding -fno-builtin -fno-stack-protector \
+	  -fno-unwind-tables -fno-asynchronous-unwind-tables -fdata-sections \
+	  -ffunction-sections -fno-strict-aliasing -fwrapv -Os -std=gnu11 -w \
+	  -isystem $(NEWLIB_INCLUDE) -I$(QUICKJS_PREPARED) \
+	  -D_GNU_SOURCE -DPJS_QUICKJS_BAREMETAL \
+	  -DCONFIG_VERSION=\"$(QUICKJS_VERSION)\" \
+	  -c $(QUICKJS_PREPARED)/$*.c -o $@
+
+$(BUILD)/host-qjs/%.o: $(QUICKJS_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -std=gnu11 -fno-strict-aliasing -fwrapv -w \
+	  -I$(QUICKJS_PREPARED) -D_GNU_SOURCE -DPJS_QUICKJS_BAREMETAL \
+	  -DCONFIG_VERSION=\"$(QUICKJS_VERSION)\" \
+	  -c $(QUICKJS_PREPARED)/$*.c -o $@
+
+$(BUILD)/host-qjs/qjs_runtime.o: src/qjs_runtime.c $(QUICKJS_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -std=c11 -Wall -Wextra -Werror -Iinclude \
+	  -isystem $(QUICKJS_PREPARED) -D_GNU_SOURCE -DPJS_QUICKJS_BAREMETAL \
+	  -DCONFIG_VERSION=\"$(QUICKJS_VERSION)\" -c $< -o $@
+
+$(BUILD)/host-qjs/embedded_package.o: $(EMBEDDED_PACKAGE_C)
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -std=c11 -Wall -Wextra -Werror -c $< -o $@
+
+$(BUILD)/host-qjs/test_qjs_runtime.o: tests/test_qjs_runtime.c
+	@mkdir -p $(dir $@)
+	$(CC) -O2 -std=c11 -Wall -Wextra -Werror -Iinclude -c $< -o $@
+
+$(BUILD)/host/test-qjs-runtime: $(HOST_QUICKJS_OBJECTS) \
+    $(BUILD)/host-qjs/qjs_runtime.o $(BUILD)/host-qjs/embedded_package.o \
+    $(BUILD)/host-qjs/test_qjs_runtime.o
+	@mkdir -p $(dir $@)
+	$(CC) $^ -lm -o $@
+endif
+
+$(RUST_LIB): $(shell find $(HOST)/rust-core $(REPO)/engine/core -type f -not -path '*/target/*')
+	@mkdir -p $(RUST_TARGET_DIR)
+	cd $(HOST)/rust-core && CARGO_TARGET_DIR=$(RUST_TARGET_DIR) $(CARGO) build --release --locked
+
+rust-core: $(RUST_LIB)
+
+$(ELF): $(OBJECTS) $(CORE_DEP) $(RUNTIME_DEP) boot/linker-phase1.ld
+	$(LLD) -m armelf -T boot/linker-phase1.ld -Map=$(MAP) --gc-sections \
+	  $(OBJECTS) --start-group $(CORE_LINK) $(RUNTIME_LINK) --end-group -o $@
+
+$(MAP): $(ELF)
+	@test -f $@
+
+$(BIN): $(ELF)
+	$(LLVM_OBJCOPY) -O binary $< $@
+
+$(IPOD): $(BIN) tools/pack_ipod.py
+	$(PYTHON) tools/pack_ipod.py $< $@
+
+$(DIS): $(ELF)
+	$(LLVM_OBJDUMP) -d --no-show-raw-insn $< > $@
+
+inspect: $(ELF) $(BIN) $(IPOD) $(MAP)
+	$(PYTHON) tools/inspect_image.py $(BIN)
+	$(PYTHON) tools/inspect_image.py $(IPOD)
+	$(PYTHON) tools/verify_build.py --elf $(ELF) --bin $(BIN) --ipod $(IPOD) \
+	  --map $(MAP) --require-handoff-signature --kernel-symbol kernel_main_phase1
+	$(PYTHON) tools/verify_phase1.py --elf $(ELF) --bin $(BIN) --ipod $(IPOD) \
+	  --backend $(VERIFY_BACKEND) $(VERIFY_POWER) $(VERIFY_QUICKJS)
+
+manifest: $(ELF) $(BIN) $(IPOD) $(MAP) $(DIS) $(RECOVERY_POCKET)
+	@cd $(BUILD) && sha256sum \
+	  $$(basename $(ELF)) $$(basename $(BIN)) $$(basename $(IPOD)) \
+	  $$(basename $(MAP)) $$(basename $(DIS)) \
+	  generated/$$(basename $(RECOVERY_POCKET)) > $$(basename $(SHA256SUMS))
+
+ifeq ($(QUICKJS_RUNTIME),1)
+QJS_HOST_TEST := $(BUILD)/host/test-qjs-runtime
+else
+QJS_HOST_TEST :=
+endif
+
+test: runtime-hold-contract $(QJS_HOST_TEST)
+	@mkdir -p $(BUILD)/host
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections \
+	  -Wl,--gc-sections -DPJS_HOST_TEST -Iinclude \
+	  tests/test_scheduler.c src/scheduler.c -o $(BUILD)/host/test-scheduler
+	$(BUILD)/host/test-scheduler
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude \
+	  tests/test_heap.c src/heap.c -o $(BUILD)/host/test-heap
+	$(BUILD)/host/test-heap
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections \
+	  -Wl,--gc-sections -DPJS_HOST_TEST -Iinclude \
+	  tests/test_power.c src/power.c -o $(BUILD)/host/test-power
+	$(BUILD)/host/test-power
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude \
+	  tests/test_damage_abi.c -o $(BUILD)/host/test-damage-abi
+	$(BUILD)/host/test-damage-abi
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -DPJS_HOST_TEST -Iinclude \
+	  tests/test_fat32.c src/fat32.c -o $(BUILD)/host/test-fat32
+	$(BUILD)/host/test-fat32
+	$(PYTHON) tests/test_embedded_pocket.py
+ifeq ($(QUICKJS_RUNTIME),1)
+	$(BUILD)/host/test-qjs-runtime
+endif
+
+c-smoke:
+	$(MAKE) -f Makefile.phase1 BUILD=$(BUILD)-stub CORE_BACKEND=stub \
+	  QUICKJS_RUNTIME=0 IMAGE_NAME=pocketjs-a1099-phase1-core-stub clean all test
+
+ci: clean all test
+
+clean:
+	rm -rf $(BUILD)
+
+.PHONY: runtime-hold-contract
+runtime-hold-contract:
+	python3 tests/test_runtime_hold_contract.py

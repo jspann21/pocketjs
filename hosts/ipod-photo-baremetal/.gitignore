@@ -2,3 +2,7 @@ build/
 build-*/
 __pycache__/
 *.pyc
+/build-phase1/
+/build-phase1-stub/
+/rust-core/target/
+*.plist

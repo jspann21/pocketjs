@@ -72,3 +72,23 @@ void __aeabi_memclr(void *destination, size_t length)
 {
     (void)memset(destination, 0, length);
 }
+
+void __aeabi_memclr4(void *destination, size_t length)
+{
+    (void)memset(destination, 0, length);
+}
+
+void __aeabi_memclr8(void *destination, size_t length)
+{
+    (void)memset(destination, 0, length);
+}
+
+void __aeabi_memset4(void *destination, size_t length, int value)
+{
+    (void)memset(destination, value, length);
+}
+
+void __aeabi_memset8(void *destination, size_t length, int value)
+{
+    (void)memset(destination, value, length);
+}

@@ -10,9 +10,12 @@
 
 #define LCD_STATE_COLD  0x4c434400u
 #define LCD_STATE_READY 0x4c43444fu
+#define LCD_MAX_BLOCK_BYTES 0x10000u
+#define LCD_STAGING_PIXELS (LCD_MAX_BLOCK_BYTES / 2u)
 
 static uint32_t lcd_state = LCD_STATE_COLD;
 static uint8_t panel_type;
+static uint16_t region_staging[LCD_STAGING_PIXELS] __attribute__((aligned(16)));
 
 static bool wait_port(void)
 {
@@ -50,12 +53,17 @@ static bool command_data(uint16_t command, uint16_t data)
     return true;
 }
 
-static bool setup_full_region(void)
+static bool setup_region(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
-    const uint16_t y0 = 0u;
-    const uint16_t y1 = (uint16_t)(PJS_LCD_HEIGHT - 1u);
-    const uint16_t x1 = (uint16_t)(PJS_LCD_WIDTH - 1u);
-    const uint16_t x0 = 0u;
+    if (width == 0u || height == 0u || x + width > PJS_LCD_WIDTH ||
+        y + height > PJS_LCD_HEIGHT) {
+        return false;
+    }
+
+    uint16_t y0 = (uint16_t)y;
+    uint16_t y1 = (uint16_t)(y + height - 1u);
+    uint16_t x1 = (uint16_t)((PJS_LCD_WIDTH - 1u) - x);
+    uint16_t x0 = (uint16_t)(x1 - width + 1u);
 
     if ((panel_type & 1u) == 0u) {
         return command_data(0x12u, y0) &&
@@ -71,6 +79,81 @@ static bool setup_full_region(void)
     PP_LCD2_PORT = PP_LCD2_CMD_MASK;
     PP_LCD2_PORT = PP_LCD2_CMD_MASK | 0x22u;
     return true;
+}
+
+static bool transfer_contiguous(const uint16_t *pixels, uint32_t pixel_count)
+{
+    if (pixels == 0 || pixel_count == 0u || pixel_count > LCD_STAGING_PIXELS ||
+        (pixel_count & 1u) != 0u || (((uintptr_t)pixels) & 3u) != 0u) {
+        return false;
+    }
+
+    uint32_t byte_count = pixel_count * 2u;
+    const uint32_t *words = (const uint32_t *)(const void *)pixels;
+    uint32_t word_count = pixel_count / 2u;
+
+    PP_LCD2_BLOCK_CTRL = 0x10000080u;
+    PP_LCD2_BLOCK_CONFIG = 0xc0010000u | (byte_count - 1u);
+    PP_LCD2_BLOCK_CTRL = 0x34000000u;
+
+    for (uint32_t index = 0u; index < word_count; ++index) {
+        if (!wait_block(PP_LCD2_BLOCK_TXOK)) {
+            PP_LCD2_BLOCK_CONFIG = 0u;
+            return false;
+        }
+        PP_LCD2_BLOCK_DATA = words[index];
+    }
+
+    if (!wait_block(PP_LCD2_BLOCK_READY)) {
+        PP_LCD2_BLOCK_CONFIG = 0u;
+        return false;
+    }
+    PP_LCD2_BLOCK_CONFIG = 0u;
+    return true;
+}
+
+static bool present_full(const uint16_t *pixels)
+{
+    if (!setup_region(0u, 0u, PJS_LCD_WIDTH, PJS_LCD_HEIGHT)) return false;
+
+    uint32_t rows_left = PJS_LCD_HEIGHT;
+    const uint16_t *source = pixels;
+    while (rows_left != 0u) {
+        uint32_t rows = rows_left > 148u ? 148u : rows_left;
+        uint32_t count = PJS_LCD_WIDTH * rows;
+        if (!transfer_contiguous(source, count)) return false;
+        source += count;
+        rows_left -= rows;
+    }
+    return true;
+}
+
+static bool present_region(const uint16_t *pixels, const PjsCoreDamageRect *region)
+{
+    if (region == 0 || region->x0 < 0 || region->y0 < 0 ||
+        region->x1 <= region->x0 || region->y1 <= region->y0 ||
+        region->x1 > (int32_t)PJS_LCD_WIDTH ||
+        region->y1 > (int32_t)PJS_LCD_HEIGHT ||
+        (region->x0 & 1) != 0 || (region->x1 & 1) != 0) {
+        return false;
+    }
+
+    uint32_t x = (uint32_t)region->x0;
+    uint32_t y = (uint32_t)region->y0;
+    uint32_t width = (uint32_t)(region->x1 - region->x0);
+    uint32_t height = (uint32_t)(region->y1 - region->y0);
+    uint32_t count = width * height;
+    if (count == 0u || count > LCD_STAGING_PIXELS) return false;
+
+    uint16_t *out = region_staging;
+    for (uint32_t row = 0u; row < height; ++row) {
+        const uint16_t *in = pixels + (size_t)(y + row) * PJS_LCD_WIDTH + x;
+        for (uint32_t column = 0u; column < width; ++column) {
+            *out++ = in[column];
+        }
+    }
+
+    return setup_region(x, y, width, height) && transfer_contiguous(region_staging, count);
 }
 
 bool lcd_init(void)
@@ -105,41 +188,26 @@ bool lcd_init(void)
 
 bool lcd_present(const uint16_t *pixels, size_t pixel_count)
 {
-    if (lcd_state != LCD_STATE_READY || pixels == 0 || pixel_count != PJS_FRAME_PIXELS ||
-        (((uintptr_t)pixels) & 3u) != 0u) {
+    if (lcd_state != LCD_STATE_READY || pixels == 0 ||
+        pixel_count != PJS_FRAME_PIXELS || (((uintptr_t)pixels) & 3u) != 0u) {
         return false;
     }
-    if (!setup_full_region()) return false;
+    return present_full(pixels);
+}
 
-    const uint32_t *words = (const uint32_t *)(const void *)pixels;
-    uint32_t rows_left = PJS_LCD_HEIGHT;
+bool lcd_present_damage(const uint16_t *pixels, size_t pixel_count,
+                        const PjsCoreDamagePlan *damage)
+{
+    if (lcd_state != LCD_STATE_READY || pixels == 0 || damage == 0 ||
+        pixel_count != PJS_FRAME_PIXELS || (((uintptr_t)pixels) & 3u) != 0u ||
+        damage->count > PJS_CORE_MAX_DAMAGE_REGIONS) {
+        return false;
+    }
+    if (damage->count == 0u) return true;
+    if (damage->full_redraw != 0u) return present_full(pixels);
 
-    /* The bridge's transfer length field is limited to 0x10000 bytes. A
-     * 220x176 frame is 77,440 bytes, so submit 148 rows and then 28 rows while
-     * the panel's full-screen GRAM window remains active. */
-    while (rows_left != 0u) {
-        uint32_t rows = rows_left > 148u ? 148u : rows_left;
-        uint32_t byte_count = PJS_LCD_WIDTH * rows * 2u;
-        size_t word_count = ((size_t)PJS_LCD_WIDTH * rows) / 2u;
-
-        PP_LCD2_BLOCK_CTRL = 0x10000080u;
-        PP_LCD2_BLOCK_CONFIG = 0xc0010000u | (byte_count - 1u);
-        PP_LCD2_BLOCK_CTRL = 0x34000000u;
-
-        for (size_t index = 0; index < word_count; ++index) {
-            if (!wait_block(PP_LCD2_BLOCK_TXOK)) {
-                PP_LCD2_BLOCK_CONFIG = 0u;
-                return false;
-            }
-            PP_LCD2_BLOCK_DATA = *words++;
-        }
-
-        if (!wait_block(PP_LCD2_BLOCK_READY)) {
-            PP_LCD2_BLOCK_CONFIG = 0u;
-            return false;
-        }
-        PP_LCD2_BLOCK_CONFIG = 0u;
-        rows_left -= rows;
+    for (uint32_t index = 0u; index < damage->count; ++index) {
+        if (!present_region(pixels, &damage->regions[index])) return false;
     }
     return true;
 }

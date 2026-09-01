@@ -30,7 +30,7 @@ MAP := $(BUILD)/pocketjs-a1099-probe.map
 DIS := $(BUILD)/pocketjs-a1099-probe.dis
 SHA256SUMS := $(BUILD)/SHA256SUMS.txt
 
-.PHONY: all clean inspect test manifest reference-hash ci
+.PHONY: all clean inspect test manifest reference-hash ci phase1 phase1-check
 all: $(IPOD) $(DIS) inspect manifest
 
 $(BUILD)/%.o: %.c
@@ -77,3 +77,11 @@ ci: clean all test reference-hash
 
 clean:
 	rm -rf $(BUILD)
+
+# Phase 1 is intentionally a separate link product. The default/ci targets
+# above continue reproducing the hardware-qualified Phase-0 image exactly.
+phase1:
+	$(MAKE) -f Makefile.phase1 all
+
+phase1-check:
+	$(MAKE) -f Makefile.phase1 ci

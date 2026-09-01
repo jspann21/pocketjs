@@ -19,9 +19,13 @@
 /* Probe presentation rate. The PocketJS runtime will keep 60 Hz simulation
  * semantics while presenting only when the LCD is ready and content is dirty. */
 #define PJS_PROBE_FRAME_US 33333u
+#define PJS_TIMER_IRQ_US 1000u
+#define PJS_PHASE1_RENDER_GAP_US 50000u
+#define PJS_HEAP_TOP_GUARD (64u * 1024u)
 
 /* Conservative timeouts: every hardware wait must terminate. */
 #define PJS_LCD_POLL_LIMIT 1000000u
 #define PJS_WHEEL_POLL_LIMIT 10000u
+#define PJS_CACHE_POLL_LIMIT 1000000u
 
 #endif

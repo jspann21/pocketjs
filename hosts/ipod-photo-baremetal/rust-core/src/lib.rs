@@ -1,0 +1,691 @@
+#![no_std]
+#![feature(alloc_error_handler)]
+
+extern crate alloc;
+
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::alloc::{GlobalAlloc, Layout};
+use core::ptr;
+use core::slice;
+
+use pocketjs_core::{
+    damage::{DamagePolicy, DamageRect, DamageTracker},
+    package,
+    raster, spec, Ui,
+};
+
+const WIDTH: u32 = 220;
+const HEIGHT: u32 = 176;
+const PIXELS: usize = WIDTH as usize * HEIGHT as usize;
+const MAX_DAMAGE_REGIONS: usize = 8;
+
+const BUTTON_SELECT: u32 = 1 << 0;
+const BUTTON_RIGHT: u32 = 1 << 1;
+const BUTTON_LEFT: u32 = 1 << 2;
+const BUTTON_PLAY: u32 = 1 << 3;
+const BUTTON_MENU: u32 = 1 << 4;
+
+const POWER_FIREWIRE: u32 = 1 << 0;
+const POWER_USB: u32 = 1 << 1;
+const POWER_CHARGING: u32 = 1 << 2;
+const POWER_ADC_VALID: u32 = 1 << 3;
+const POWER_I2C_FAULT: u32 = 1 << 4;
+const POWER_TELEMETRY_DISABLED: u32 = 1 << 5;
+const POWER_ADC_RANGE_FAULT: u32 = 1 << 6;
+
+extern "C" {
+    fn pjs_heap_alloc(size: usize, alignment: usize) -> *mut u8;
+    fn pjs_heap_realloc(pointer: *mut u8, size: usize, alignment: usize) -> *mut u8;
+    fn pjs_heap_free(pointer: *mut u8);
+    fn panic_code(reason: u32) -> !;
+}
+
+struct A1099Allocator;
+
+unsafe impl GlobalAlloc for A1099Allocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        pjs_heap_alloc(layout.size(), layout.align())
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, _layout: Layout) {
+        pjs_heap_free(pointer)
+    }
+
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        pjs_heap_realloc(pointer, new_size, layout.align())
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: A1099Allocator = A1099Allocator;
+
+#[alloc_error_handler]
+fn alloc_error(_layout: Layout) -> ! {
+    unsafe { panic_code(0x52534f4d) } // RSOM
+}
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
+    unsafe { panic_code(0x5253504e) } // RSPN
+}
+
+#[repr(C)]
+pub struct PjsCoreInput {
+    buttons: u32,
+    wheel_delta: i32,
+    wheel_position: u32,
+    wheel_touched: u32,
+    hold: u32,
+    battery_mv: u32,
+    power_flags: u32,
+    dropped_ticks: u32,
+    cache_enabled: u32,
+    last_frame_us: u32,
+    runtime_status: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PjsCoreDamageRect {
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+}
+
+#[repr(C)]
+pub struct PjsCoreDamagePlan {
+    count: u32,
+    full_redraw: u32,
+    area: u32,
+    reserved: u32,
+    regions: [PjsCoreDamageRect; MAX_DAMAGE_REGIONS],
+}
+
+impl Default for PjsCoreDamagePlan {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            full_redraw: 0,
+            area: 0,
+            reserved: 0,
+            regions: [PjsCoreDamageRect::default(); MAX_DAMAGE_REGIONS],
+        }
+    }
+}
+
+#[repr(C)]
+pub struct PjsGuestPackage {
+    javascript: *const u8,
+    javascript_length: u32,
+    pak: *const u8,
+    pak_length: u32,
+    plan: *const u8,
+    plan_length: u32,
+    package_hash_low: u32,
+    package_hash_high: u32,
+    variant_hash_low: u32,
+    variant_hash_high: u32,
+}
+
+impl Default for PjsGuestPackage {
+    fn default() -> Self {
+        Self {
+            javascript: ptr::null(),
+            javascript_length: 0,
+            pak: ptr::null(),
+            pak_length: 0,
+            plan: ptr::null(),
+            plan_length: 0,
+            package_hash_low: 0,
+            package_hash_high: 0,
+            variant_hash_low: 0,
+            variant_hash_high: 0,
+        }
+    }
+}
+
+struct Nodes {
+    heartbeat: i32,
+    wheel_track: i32,
+    wheel_marker: i32,
+    hold: i32,
+    battery_back: i32,
+    battery_fill: i32,
+    power_firewire: i32,
+    power_usb: i32,
+    power_charging: i32,
+    runtime: i32,
+    dropped: i32,
+    buttons: [i32; 5],
+}
+
+struct CoreState {
+    ui: Ui,
+    nodes: Nodes,
+    words: Vec<u32>,
+    damage: DamageTracker<MAX_DAMAGE_REGIONS>,
+    frame: u32,
+    heartbeat_phase: u32,
+    last_buttons: u32,
+    last_wheel_position: u32,
+    last_wheel_touched: u32,
+    last_hold: u32,
+    last_battery_mv: u32,
+    last_power_flags: u32,
+    last_cache_enabled: u32,
+    last_runtime_status: u32,
+    last_dropped_ticks: u32,
+    last_frame_class: u32,
+    dirty: bool,
+}
+
+static mut STATE: *mut CoreState = ptr::null_mut();
+
+#[no_mangle]
+#[used]
+pub static PJS_CORE_BACKEND_RUST: u32 = 0x5255_5354; /* RUST */
+
+#[no_mangle]
+pub extern "C" fn pjs_core_backend_marker() -> u32 {
+    unsafe { core::ptr::read_volatile(&PJS_CORE_BACKEND_RUST) }
+}
+
+const fn abgr(red: u32, green: u32, blue: u32, alpha: u32) -> u32 {
+    (red & 0xff) | ((green & 0xff) << 8) | ((blue & 0xff) << 16) | ((alpha & 0xff) << 24)
+}
+
+fn set(ui: &mut Ui, node: i32, prop: u8, value: f64) {
+    ui.set_prop(node, prop, value);
+}
+
+fn view(ui: &mut Ui, x: f32, y: f32, width: f32, height: f32, color: u32) -> i32 {
+    let node = ui.create_node(spec::NodeType::View as u8);
+    if node == 0 {
+        unsafe { panic_code(0x52534e44) } // RSND
+    }
+    set(ui, node, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    set(ui, node, spec::prop::INSET_L, x as f64);
+    set(ui, node, spec::prop::INSET_T, y as f64);
+    set(ui, node, spec::prop::WIDTH, width as f64);
+    set(ui, node, spec::prop::HEIGHT, height as f64);
+    set(ui, node, spec::prop::BG_COLOR, color as f64);
+    ui.insert_before(spec::ROOT_ID, node, 0);
+    node
+}
+
+fn set_color(ui: &mut Ui, node: i32, color: u32) {
+    set(ui, node, spec::prop::BG_COLOR, color as f64);
+}
+
+fn build_state() -> CoreState {
+    let mut ui = Ui::new_with_raster_density(1);
+    ui.set_viewport(WIDTH as f32, HEIGHT as f32);
+    set_color(&mut ui, spec::ROOT_ID, abgr(8, 11, 18, 255));
+
+    let top = view(&mut ui, 0.0, 0.0, 220.0, 16.0, abgr(24, 32, 48, 255));
+    set(&mut ui, top, spec::prop::BORDER_WIDTH, 1.0);
+    set(&mut ui, top, spec::prop::BORDER_COLOR, abgr(70, 90, 120, 255) as f64);
+
+    let heartbeat = view(&mut ui, 204.0, 4.0, 8.0, 8.0, abgr(255, 255, 255, 255));
+    set(&mut ui, heartbeat, spec::prop::RADIUS, 2.0);
+
+    let hold = view(&mut ui, 0.0, 48.0, 220.0, 8.0, abgr(230, 12, 32, 255));
+    set(&mut ui, hold, spec::prop::OPACITY, 0.0);
+
+    let wheel_track = view(&mut ui, 6.0, 105.0, 208.0, 5.0, abgr(46, 58, 74, 255));
+    set(&mut ui, wheel_track, spec::prop::RADIUS, 2.0);
+    let wheel_marker = view(&mut ui, 6.0, 100.0, 5.0, 15.0, abgr(240, 245, 255, 255));
+    set(&mut ui, wheel_marker, spec::prop::RADIUS, 2.0);
+
+    let battery_back = view(&mut ui, 7.0, 23.0, 102.0, 10.0, abgr(38, 45, 58, 255));
+    let battery_fill = view(&mut ui, 9.0, 25.0, 1.0, 6.0, abgr(40, 220, 92, 255));
+    set(&mut ui, battery_back, spec::prop::BORDER_WIDTH, 1.0);
+    set(&mut ui, battery_back, spec::prop::BORDER_COLOR, abgr(100, 115, 138, 255) as f64);
+
+    let power_firewire = view(&mut ui, 124.0, 23.0, 16.0, 10.0, abgr(40, 45, 55, 255));
+    let power_usb = view(&mut ui, 146.0, 23.0, 16.0, 10.0, abgr(40, 45, 55, 255));
+    let runtime = view(&mut ui, 113.0, 24.0, 8.0, 8.0, abgr(40, 45, 55, 255));
+    let power_charging = view(&mut ui, 168.0, 23.0, 16.0, 10.0, abgr(40, 45, 55, 255));
+    let dropped = view(&mut ui, 190.0, 23.0, 16.0, 10.0, abgr(40, 45, 55, 255));
+    set(&mut ui, runtime, spec::prop::RADIUS, 2.0);
+
+    let mut buttons = [0; 5];
+    let idle = abgr(45, 53, 67, 255);
+    for (index, node) in buttons.iter_mut().enumerate() {
+        *node = view(&mut ui, 12.0 + index as f32 * 41.0, 132.0, 32.0, 32.0, idle);
+        set(&mut ui, *node, spec::prop::RADIUS, 5.0);
+        set(&mut ui, *node, spec::prop::BORDER_WIDTH, 1.0);
+        set(&mut ui, *node, spec::prop::BORDER_COLOR, abgr(88, 104, 132, 255) as f64);
+    }
+
+    CoreState {
+        ui,
+        nodes: Nodes {
+            heartbeat,
+            wheel_track,
+            wheel_marker,
+            hold,
+            battery_back,
+            battery_fill,
+            power_firewire,
+            power_usb,
+            power_charging,
+            runtime,
+            dropped,
+            buttons,
+        },
+        words: Vec::new(),
+        damage: DamageTracker::new(),
+        frame: 0,
+        heartbeat_phase: u32::MAX,
+        last_buttons: u32::MAX,
+        last_wheel_position: u32::MAX,
+        last_wheel_touched: u32::MAX,
+        last_hold: u32::MAX,
+        last_battery_mv: u32::MAX,
+        last_power_flags: u32::MAX,
+        last_cache_enabled: u32::MAX,
+        last_runtime_status: u32::MAX,
+        last_dropped_ticks: u32::MAX,
+        last_frame_class: u32::MAX,
+        dirty: true,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_init() -> i32 {
+    unsafe {
+        if !STATE.is_null() {
+            return 0;
+        }
+        STATE = Box::into_raw(Box::new(build_state()));
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_step(input: *const PjsCoreInput) -> i32 {
+    if input.is_null() {
+        return -1;
+    }
+    let state = unsafe { STATE.as_mut() };
+    let Some(state) = state else { return -2 };
+    let input = unsafe { &*input };
+    let mut changed = false;
+
+    state.frame = state.frame.wrapping_add(1);
+    let heartbeat_phase = (state.frame / 30) & 1;
+    if heartbeat_phase != state.heartbeat_phase {
+        let pulse = if heartbeat_phase == 0 { 1.0 } else { 0.45 };
+        set(&mut state.ui, state.nodes.heartbeat, spec::prop::OPACITY, pulse);
+        state.heartbeat_phase = heartbeat_phase;
+        changed = true;
+    }
+
+    let wheel_position = input.wheel_position.min(95);
+    if wheel_position != state.last_wheel_position {
+        let wheel_x = 6.0 + wheel_position as f32 * 203.0 / 95.0;
+        set(&mut state.ui, state.nodes.wheel_marker, spec::prop::INSET_L, wheel_x as f64);
+        state.last_wheel_position = wheel_position;
+        changed = true;
+    }
+    if input.wheel_touched != state.last_wheel_touched {
+        set_color(
+            &mut state.ui,
+            state.nodes.wheel_marker,
+            if input.wheel_touched != 0 {
+                abgr(0, 220, 255, 255)
+            } else {
+                abgr(245, 248, 255, 255)
+            },
+        );
+        state.last_wheel_touched = input.wheel_touched;
+        changed = true;
+    }
+    if input.hold != state.last_hold {
+        set(
+            &mut state.ui,
+            state.nodes.hold,
+            spec::prop::OPACITY,
+            if input.hold != 0 { 0.92 } else { 0.0 },
+        );
+        state.last_hold = input.hold;
+        changed = true;
+    }
+
+    if input.buttons != state.last_buttons {
+        let bits = [BUTTON_MENU, BUTTON_LEFT, BUTTON_SELECT, BUTTON_RIGHT, BUTTON_PLAY];
+        let active = [
+            abgr(235, 30, 50, 255),
+            abgr(0, 205, 255, 255),
+            abgr(30, 230, 90, 255),
+            abgr(0, 205, 255, 255),
+            abgr(255, 215, 35, 255),
+        ];
+        for index in 0..5 {
+            set_color(
+                &mut state.ui,
+                state.nodes.buttons[index],
+                if input.buttons & bits[index] != 0 {
+                    active[index]
+                } else {
+                    abgr(45, 53, 67, 255)
+                },
+            );
+        }
+        state.last_buttons = input.buttons;
+        changed = true;
+    }
+
+    if input.battery_mv != state.last_battery_mv || input.power_flags != state.last_power_flags {
+        let telemetry_disabled = input.power_flags & POWER_TELEMETRY_DISABLED != 0;
+        let telemetry_valid = input.power_flags & POWER_ADC_VALID != 0;
+        let telemetry_fault = input.power_flags & POWER_I2C_FAULT != 0;
+        let telemetry_range_fault = input.power_flags & POWER_ADC_RANGE_FAULT != 0;
+        if telemetry_disabled {
+            set(&mut state.ui, state.nodes.battery_fill, spec::prop::WIDTH, 58.0);
+            set_color(&mut state.ui, state.nodes.battery_fill, abgr(145, 100, 255, 255));
+        } else if telemetry_valid {
+            let mv = input.battery_mv.clamp(3200, 4200);
+            let battery_width = 1.0 + (mv - 3200) as f32 * 96.0 / 1000.0;
+            set(&mut state.ui, state.nodes.battery_fill, spec::prop::WIDTH, battery_width as f64);
+            set_color(
+                &mut state.ui,
+                state.nodes.battery_fill,
+                if mv < 3450 {
+                    abgr(235, 30, 50, 255)
+                } else if mv < 3700 {
+                    abgr(255, 205, 30, 255)
+                } else {
+                    abgr(35, 225, 92, 255)
+                },
+            );
+        } else {
+            set(&mut state.ui, state.nodes.battery_fill, spec::prop::WIDTH, 96.0);
+            set_color(
+                &mut state.ui,
+                state.nodes.battery_fill,
+                if telemetry_fault {
+                    abgr(255, 45, 70, 255)
+                } else if telemetry_range_fault {
+                    abgr(255, 145, 35, 255)
+                } else {
+                    abgr(100, 110, 130, 255)
+                },
+            );
+        }
+
+        let off = abgr(40, 45, 55, 255);
+        set_color(
+            &mut state.ui,
+            state.nodes.power_usb,
+            if input.power_flags & POWER_USB != 0 {
+                abgr(40, 150, 255, 255)
+            } else {
+                off
+            },
+        );
+        set_color(
+            &mut state.ui,
+            state.nodes.power_charging,
+            if telemetry_disabled {
+                abgr(145, 100, 255, 255)
+            } else if telemetry_fault {
+                abgr(255, 45, 70, 255)
+            } else if telemetry_range_fault {
+                abgr(255, 145, 35, 255)
+            } else if input.power_flags & POWER_CHARGING != 0 {
+                abgr(40, 240, 100, 255)
+            } else {
+                off
+            },
+        );
+        state.last_battery_mv = input.battery_mv;
+        state.last_power_flags = input.power_flags;
+        changed = true;
+    }
+
+    if input.cache_enabled != state.last_cache_enabled {
+        set_color(
+            &mut state.ui,
+            state.nodes.power_firewire,
+            if input.cache_enabled != 0 {
+                abgr(40, 230, 100, 255)
+            } else {
+                abgr(255, 145, 35, 255)
+            },
+        );
+        state.last_cache_enabled = input.cache_enabled;
+        changed = true;
+    }
+
+    if input.runtime_status != state.last_runtime_status {
+        let color = match input.runtime_status {
+            1 => abgr(255, 215, 35, 255),
+            2 => abgr(238, 76, 255, 255),
+            3 => abgr(255, 40, 65, 255),
+            4 => abgr(0, 222, 255, 255),
+            5 => abgr(255, 145, 35, 255),
+            _ => abgr(40, 45, 55, 255),
+        };
+        set_color(&mut state.ui, state.nodes.runtime, color);
+        state.last_runtime_status = input.runtime_status;
+        changed = true;
+    }
+
+    let frame_class = if input.dropped_ticks != 0 {
+        4
+    } else if input.last_frame_us == 0 {
+        0
+    } else if input.last_frame_us < 100_000 {
+        1
+    } else if input.last_frame_us < 300_000 {
+        2
+    } else {
+        3
+    };
+    if input.dropped_ticks != state.last_dropped_ticks ||
+        frame_class != state.last_frame_class {
+        let color = match frame_class {
+            1 => abgr(40, 230, 100, 255),
+            2 => abgr(255, 215, 35, 255),
+            3 => abgr(255, 145, 35, 255),
+            4 => abgr(255, 30, 60, 255),
+            _ => abgr(40, 45, 55, 255),
+        };
+        set_color(&mut state.ui, state.nodes.dropped, color);
+        state.last_dropped_ticks = input.dropped_ticks;
+        state.last_frame_class = frame_class;
+        changed = true;
+    }
+
+    state.ui.tick();
+    state.dirty |= changed;
+    0
+}
+
+fn swap_rendered_region(framebuffer: &mut [u16], region: DamageRect) {
+    let x0 = region.x0.max(0).min(WIDTH as i32) as usize;
+    let y0 = region.y0.max(0).min(HEIGHT as i32) as usize;
+    let x1 = region.x1.max(0).min(WIDTH as i32) as usize;
+    let y1 = region.y1.max(0).min(HEIGHT as i32) as usize;
+    for y in y0..y1 {
+        let row = &mut framebuffer[y * WIDTH as usize + x0..y * WIDTH as usize + x1];
+        for pixel in row {
+            *pixel = pixel.swap_bytes();
+        }
+    }
+}
+
+fn lcd_aligned_region(region: DamageRect) -> PjsCoreDamageRect {
+    let mut x0 = region.x0.max(0).min(WIDTH as i32);
+    let mut x1 = region.x1.max(0).min(WIDTH as i32);
+    let y0 = region.y0.max(0).min(HEIGHT as i32);
+    let y1 = region.y1.max(0).min(HEIGHT as i32);
+    x0 &= !1;
+    x1 = (x1 + 1) & !1;
+    if x1 > WIDTH as i32 {
+        x1 = WIDTH as i32;
+    }
+    PjsCoreDamageRect { x0, y0, x1, y1 }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_render_damage(
+    pixels: *mut u16,
+    pixel_count: u32,
+    damage_out: *mut PjsCoreDamagePlan,
+) -> i32 {
+    if pixels.is_null() || damage_out.is_null() || pixel_count as usize != PIXELS {
+        return -1;
+    }
+    let state = unsafe { STATE.as_mut() };
+    let Some(state) = state else { return -2 };
+    state.words.clear();
+    state.words.extend_from_slice(&state.ui.draw().words);
+    let framebuffer = unsafe { slice::from_raw_parts_mut(pixels, PIXELS) };
+    let plan = match raster::render_scaled_rgb565_incremental(
+        &state.ui,
+        &state.words,
+        framebuffer,
+        1,
+        &mut state.damage,
+        DamagePolicy::new(80),
+    ) {
+        Ok(plan) => plan,
+        Err(_) => return -3,
+    };
+
+    for &region in plan.regions() {
+        swap_rendered_region(framebuffer, region);
+    }
+
+    let mut output = PjsCoreDamagePlan::default();
+    output.count = plan.region_count() as u32;
+    output.full_redraw = plan.is_full_redraw() as u32;
+    output.area = plan.area().min(u32::MAX as u64) as u32;
+    for (slot, &region) in output.regions.iter_mut().zip(plan.regions()) {
+        *slot = lcd_aligned_region(region);
+    }
+    unsafe { ptr::write(damage_out, output) };
+    state.dirty = false;
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_needs_render() -> u32 {
+    unsafe { STATE.as_ref().map_or(0, |state| state.dirty as u32) }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_render(pixels: *mut u16, pixel_count: u32) -> i32 {
+    let state = unsafe { STATE.as_mut() };
+    let Some(state) = state else { return -2 };
+    state.damage.invalidate();
+    let mut damage = PjsCoreDamagePlan::default();
+    pjs_core_render_damage(pixels, pixel_count, &mut damage)
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_frame() -> u32 {
+    unsafe { STATE.as_ref().map_or(0, |state| state.frame) }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_draw_words() -> u32 {
+    unsafe { STATE.as_ref().map_or(0, |state| state.words.len() as u32) }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_package_open_ipod_photo(
+    bytes: *const u8,
+    length: u32,
+    guest_out: *mut PjsGuestPackage,
+) -> i32 {
+    if bytes.is_null() || guest_out.is_null() || length == 0 {
+        return -1;
+    }
+    let bytes = unsafe { slice::from_raw_parts(bytes, length as usize) };
+    let guest = match package::select_guest(bytes, "ipod-photo", 1, false) {
+        Ok(guest) => guest,
+        Err(_) => return -2,
+    };
+    if guest.js.is_empty() || guest.js.len() > u32::MAX as usize ||
+        guest.pak.len() > u32::MAX as usize || guest.plan.len() > u32::MAX as usize {
+        return -3;
+    }
+    let result = PjsGuestPackage {
+        javascript: guest.js.as_ptr(),
+        javascript_length: guest.js.len() as u32,
+        pak: guest.pak.as_ptr(),
+        pak_length: guest.pak.len() as u32,
+        plan: guest.plan.as_ptr(),
+        plan_length: guest.plan.len() as u32,
+        package_hash_low: guest.package_hash as u32,
+        package_hash_high: (guest.package_hash >> 32) as u32,
+        variant_hash_low: guest.variant_hash as u32,
+        variant_hash_high: (guest.variant_hash >> 32) as u32,
+    };
+    unsafe { ptr::write(guest_out, result) };
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_create_node(node_type: u32) -> i32 {
+    let Some(state) = (unsafe { STATE.as_mut() }) else { return 0 };
+    if node_type > u8::MAX as u32 {
+        return 0;
+    }
+    let id = state.ui.create_node(node_type as u8);
+    if id != 0 {
+        state.dirty = true;
+    }
+    id
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_destroy_node(id: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.destroy_node(id);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_insert_before(parent: i32, child: i32, anchor: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.insert_before(parent, child, anchor);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_remove_child(parent: i32, child: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.remove_child(parent, child);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_set_prop(id: i32, prop: u32, value: f64) {
+    if prop > u8::MAX as u32 {
+        return;
+    }
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.set_prop(id, prop as u8, value);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_shutdown() {
+    unsafe {
+        if !STATE.is_null() {
+            drop(Box::from_raw(STATE));
+            STATE = ptr::null_mut();
+        }
+    }
+}

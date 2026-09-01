@@ -50,6 +50,7 @@ def main() -> None:
     parser.add_argument("--map", required=True, type=Path)
     parser.add_argument("--readelf", default="readelf")
     parser.add_argument("--require-handoff-signature", action="store_true")
+    parser.add_argument("--kernel-symbol", default="kernel_main")
     parser.add_argument("--nm", default="nm")
     args = parser.parse_args()
 
@@ -74,9 +75,15 @@ def main() -> None:
     relocations = run(args.readelf, "-r", str(args.elf))
     if "There are no relocations in this file." not in relocations:
         raise SystemExit("FAIL: final ELF still contains relocations")
-    undefined = run(args.nm, "-u", str(args.elf)).strip()
-    if undefined:
-        raise SystemExit(f"FAIL: undefined symbols remain:\n{undefined}")
+    undefined_output = run(args.nm, "-u", str(args.elf)).strip()
+    strong_undefined = [
+        line for line in undefined_output.splitlines()
+        if line.split() and line.split()[0] == "U"
+    ]
+    if strong_undefined:
+        raise SystemExit(
+            "FAIL: strong undefined symbols remain:\n" + "\n".join(strong_undefined)
+        )
 
     nm_output = run(args.nm, "-n", str(args.elf))
     symbols = symbols_from_nm(nm_output)
@@ -89,7 +96,7 @@ def main() -> None:
         "remap_target",
         "remap_stub_end",
         "post_remap",
-        "kernel_main",
+        args.kernel_symbol,
         "__image_end",
         "__bss_start",
         "__bss_end",

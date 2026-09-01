@@ -86,3 +86,36 @@ python3 tools/handoff.py restore --mount /path/to/IPOD
 
 Read `docs/HARDWARE_TEST.md`, `docs/REVERSIBLE_BOOT.md`, and
 `docs/HARDWARE_GATES.md` before copying an artifact to the device.
+
+## Phase 1: kernel substrate and real retained core
+
+Phase 1 is a separate artifact. It preserves the exact Phase-0 default target
+while adding a context-preserving Timer1 IRQ path, deterministic 60 Hz
+scheduler, bounded SDRAM allocator, telemetry-only PCF50605 access, and the
+actual `pocketjs-core` retained UI plus RGB565 rasterizer compiled `no_std` for
+ARMv4T.
+
+```sh
+make phase1-check
+```
+
+The output is:
+
+```text
+build-phase1/pocketjs-a1099-phase1-core.ipod
+```
+
+It is not hardware-qualified merely because it builds. Install only the exact
+CI artifact through `tools/handoff.py`, after restoring and verifying the
+original `rockbox.ipod`. Follow `docs/PHASE1_HARDWARE_TEST.md`. QuickJS, ATA,
+FAT, audio, charger control, standby, and direct OSOS installation remain out
+of scope for this gate.
+
+
+## Phase 1 incremental renderer
+
+`Makefile.phase1` builds `pocketjs-a1099-phase1-paced.ipod`. It runs the
+real no-std Rust PocketJS core, keeps 60 Hz fixed simulation, limits DrawList
+planning to 30 Hz, rasterizes only retained damage rectangles, and transfers
+only those rectangles to the LCD. The expensive first full frame completes
+before Timer1 starts. PCF50605/I2C telemetry remains disabled for this gate.
