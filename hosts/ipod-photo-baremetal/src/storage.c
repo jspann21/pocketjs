@@ -103,13 +103,19 @@ static bool ata_read_sector(void *context, uint32_t lba,
     return true;
 }
 
-int pjs_storage_load_guest(PjsStorageFile *file)
+void pjs_storage_reset_diagnostics(void)
 {
-    if (file == 0) return PJS_STORAGE_ERR_ARGUMENT;
-    *file = (PjsStorageFile){0};
     storage_error = 0u;
     storage_sector_reads = 0u;
     storage_first_failed_lba = UINT32_MAX;
+}
+
+int pjs_storage_load_guest_named(PjsStorageFile *file,
+                                 const char file_name[11])
+{
+    if (file == 0 || file_name == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    *file = (PjsStorageFile){0};
+    storage_error = 0u;
     ata_prepare();
 
     PjsFat32 fat = {0};
@@ -120,7 +126,7 @@ int pjs_storage_load_guest(PjsStorageFile *file)
     }
 
     uint32_t expected = 0u;
-    rc = pjs_fat32_short_file_size(&fat, guest_directory, guest_filename, &expected);
+    rc = pjs_fat32_short_file_size(&fat, guest_directory, file_name, &expected);
     if (rc != PJS_STORAGE_OK) {
         storage_error = (uint32_t)(-rc);
         return rc;
@@ -135,7 +141,7 @@ int pjs_storage_load_guest(PjsStorageFile *file)
         return PJS_STORAGE_ERR_ALLOC;
     }
     uint32_t length = 0u;
-    rc = pjs_fat32_read_short_file(&fat, guest_directory, guest_filename,
+    rc = pjs_fat32_read_short_file(&fat, guest_directory, file_name,
                                    bytes, expected, &length);
     if (rc != PJS_STORAGE_OK) {
         pjs_heap_free(bytes);
@@ -150,6 +156,12 @@ int pjs_storage_load_guest(PjsStorageFile *file)
     file->bytes = bytes;
     file->length = length;
     return PJS_STORAGE_OK;
+}
+
+int pjs_storage_load_guest(PjsStorageFile *file)
+{
+    pjs_storage_reset_diagnostics();
+    return pjs_storage_load_guest_named(file, guest_filename);
 }
 
 void pjs_storage_release(PjsStorageFile *file)

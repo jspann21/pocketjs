@@ -51,8 +51,11 @@ _Static_assert(sizeof(PjsCoreDamagePlan) == 144u, "damage plan ABI changed");
 #define PJS_RUNTIME_ERROR_BUDGET 5u
 
 #define PJS_BOOT_SOURCE_NONE 0u
-#define PJS_BOOT_SOURCE_DISK 1u
-#define PJS_BOOT_SOURCE_EMBEDDED 2u
+#define PJS_BOOT_SOURCE_PENDING 1u
+#define PJS_BOOT_SOURCE_ACTIVE 2u
+#define PJS_BOOT_SOURCE_LAST_GOOD 3u
+#define PJS_BOOT_SOURCE_LEGACY_APP 4u
+#define PJS_BOOT_SOURCE_EMBEDDED 5u
 
 #define PJS_BOOT_FAILURE_NONE 0u
 #define PJS_BOOT_FAILURE_STORAGE 1u

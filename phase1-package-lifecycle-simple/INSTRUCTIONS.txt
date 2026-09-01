@@ -1,0 +1,61 @@
+PocketJS A1099 package-lifecycle batch
+
+This tests two package-selection paths with one firmware install. It changes
+only rockbox.ipod and four named files in /POCKETJS. The scripts back up and
+restore every changed file with SHA-256 verification.
+
+INSTALL AND BOOT 1
+
+1. Put the restored iPod in disk mode and confirm it appears as F:\.
+2. Open PowerShell in this folder and run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+3. Continue only if it says INSTALL COMPLETE.
+4. Safely eject and boot. Allow up to 30 seconds.
+5. The top line should begin:
+
+   ACTV P02
+
+   The R digits can vary. Confirm the ordinary app appears, then press center
+   once and turn the wheel once.
+
+STAGE AND BOOT 2
+
+1. Return to disk mode and reconnect as F:\.
+2. Run:
+
+   .\STAGE-FALLBACK.ps1
+
+3. Continue only if it says FALLBACK STAGED.
+4. Safely eject and boot again. The top line should begin:
+
+   EMBD P02
+
+   Confirm the ordinary app appears. No repeated input checks are needed.
+
+RESTORE
+
+1. Return to disk mode and reconnect as F:\.
+2. Run:
+
+   .\RESTORE.ps1
+
+3. Continue only if it says RESTORE VERIFIED.
+4. Safely eject and confirm normal Rockbox boot.
+
+For another drive letter, add -Mount "G:\" to each command.
+
+WHAT TO RETURN
+
+Return exactly these four files:
+
+   RESULTS.txt
+   INSTALL-STATUS.json
+   FALLBACK-STATUS.json
+   RESTORE-STATUS.json
+
+Send one photo only if a source line or app is missing, wrong, or unreadable.
+Stop on any hash, backup, state, or unexpected-file error. Do not manually
+delete transaction or backup files.

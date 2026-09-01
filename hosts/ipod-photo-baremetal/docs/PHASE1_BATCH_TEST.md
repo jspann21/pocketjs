@@ -1,5 +1,14 @@
 # Phase 1 one-candidate qualification batch
 
+For current package bring-up, use the self-contained
+`phase1-package-lifecycle-simple` folder. It performs one firmware install and
+two sparse, text-only boots: corrupt pending → valid active, then corrupt
+pending → embedded fallback. Its PowerShell scripts preserve and verify the
+original Rockbox image and all four fixed package slots. The larger diagnostic
+campaign below remains the reference for the earlier native-control and power
+qualification; do not repeat its unchanged screen observations for the
+package-lifecycle candidate.
+
 Use one exact CI candidate for the complete Phase-1 hardware pass. The batch
 combines the native controls, power observation, QuickJS guest, disk package,
 fallback, Hold transition, and restoration checks. It does not install a new

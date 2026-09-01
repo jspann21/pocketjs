@@ -84,6 +84,20 @@ slot-0 glyph cell fully on-screen. Installation and restoration records verify
 the candidate, disk package, original Rockbox hash, and absence of remaining
 handoff state.
 
+## Package-lifecycle candidate awaiting physical result
+
+- File: `pocketjs-a1099-phase1-package-lifecycle.ipod`
+- SHA-256: `a55eeb41b3a9afb35b525aa1c5cfbf5ad015d1b9136ea724a32c57b85f963702`
+- Valid active package SHA-256: `d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b`
+- Rejected pending package SHA-256: `eca8936f299161b3668622247e740bae0de93ddd6dfcf432525e6404cf1df630`
+
+This candidate adds the read-only `PENDING.PKT` → `ACTIVE.PKT` →
+`LASTGOOD.PKT` → `APP.PKT` → embedded selection order. QuickJS boot and the
+first guest frame must succeed before a disk slot is accepted. The two-boot
+physical gate expects `ACTV P02 R#####` and then `EMBD P02 R#####` from one
+firmware installation. It is not part of the qualified scope until the
+completed result and verified restore records are returned.
+
 ## Qualified scope
 
 - Rockbox bootloader handoff and standalone ARMv4T startup

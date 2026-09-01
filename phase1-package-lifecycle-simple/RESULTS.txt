@@ -1,0 +1,13 @@
+PocketJS A1099 package-lifecycle batch result
+
+Boot 1 complete source line: [fill in]
+Boot 1 app appeared; center and wheel worked: [yes/no]
+
+Boot 2 complete source line: [fill in]
+Boot 2 app appeared: [yes/no]
+
+RESTORE.ps1 said RESTORE VERIFIED: [yes/no]
+Normal Rockbox boot after restore: [yes/no]
+
+Return this file plus INSTALL-STATUS.json, FALLBACK-STATUS.json, and
+RESTORE-STATUS.json. Send one photo only if a source line or app was wrong.

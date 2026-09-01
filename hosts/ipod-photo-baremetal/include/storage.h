@@ -53,6 +53,9 @@ int pjs_fat32_read_short_file(PjsFat32 *fat,
                               uint32_t *length_out);
 
 int pjs_storage_load_guest(PjsStorageFile *file);
+void pjs_storage_reset_diagnostics(void);
+int pjs_storage_load_guest_named(PjsStorageFile *file,
+                                 const char file_name[11]);
 void pjs_storage_release(PjsStorageFile *file);
 uint32_t pjs_storage_last_error(void);
 uint32_t pjs_storage_sector_read_count(void);

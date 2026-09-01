@@ -33,6 +33,27 @@ extern const uint32_t pjs_embedded_package_length;
 
 static uint16_t framebuffer[PJS_FRAME_PIXELS] __attribute__((aligned(16)));
 
+typedef struct {
+    const char *file_name;
+    uint32_t source;
+} PjsBootSlot;
+
+static const char pending_package[11] =
+    {'P','E','N','D','I','N','G',' ','P','K','T'};
+static const char active_package[11] =
+    {'A','C','T','I','V','E',' ',' ','P','K','T'};
+static const char last_good_package[11] =
+    {'L','A','S','T','G','O','O','D','P','K','T'};
+static const char legacy_package[11] =
+    {'A','P','P',' ',' ',' ',' ',' ','P','K','T'};
+
+static const PjsBootSlot boot_slots[] = {
+    {pending_package, PJS_BOOT_SOURCE_PENDING},
+    {active_package, PJS_BOOT_SOURCE_ACTIVE},
+    {last_good_package, PJS_BOOT_SOURCE_LAST_GOOD},
+    {legacy_package, PJS_BOOT_SOURCE_LEGACY_APP},
+};
+
 static void disable_interrupt_sources(void)
 {
     PP_CPU_INT_DIS = 0xffffffffu;
@@ -76,6 +97,15 @@ static void reset_core_after_failed_guest(void)
 {
     pjs_core_shutdown();
     if (pjs_core_init() != 0) panic_code(0x50314331u); /* P1C1 */
+}
+
+static void remember_boot_failure(uint32_t stage, uint32_t code,
+                                  uint32_t *failure_stage,
+                                  uint32_t *failure_code)
+{
+    if (*failure_stage != PJS_BOOT_FAILURE_NONE) return;
+    *failure_stage = stage;
+    *failure_code = code;
 }
 
 static PjsCoreInput core_input(const PjsInputState *input,
@@ -146,38 +176,61 @@ void kernel_main_phase1(void)
     uint32_t runtime_status = PJS_RUNTIME_DISABLED;
     bool runtime_active = false;
     bool runtime_from_disk = false;
-    bool disk_runtime_attempted = false;
     uint32_t boot_source = PJS_BOOT_SOURCE_NONE;
     uint32_t boot_failure_stage = PJS_BOOT_FAILURE_NONE;
     uint32_t boot_failure_code = 0u;
     PjsStorageFile disk_package = {0};
     PjsGuestPackage guest = {0};
-    int32_t storage_result = pjs_storage_load_guest(&disk_package);
-    if (storage_result == PJS_STORAGE_OK) {
+    PjsInputState input = {0};
+    input_poll(&input);
+    PjsScheduler initial_scheduler = {0};
+    PjsCoreInput initial_input = core_input(
+        &input, &power, &initial_scheduler, 0, cache_enabled, 0u,
+        PJS_RUNTIME_PACKAGE_ADMITTED);
+    pjs_storage_reset_diagnostics();
+    for (uint32_t index = 0u;
+         index < sizeof(boot_slots) / sizeof(boot_slots[0]); ++index) {
+        int32_t storage_result = pjs_storage_load_guest_named(
+            &disk_package, boot_slots[index].file_name);
+        if (storage_result == PJS_STORAGE_ERR_NOT_FOUND) continue;
+        if (storage_result != PJS_STORAGE_OK) {
+            remember_boot_failure(PJS_BOOT_FAILURE_STORAGE,
+                                  pjs_storage_last_error(),
+                                  &boot_failure_stage, &boot_failure_code);
+            break;
+        }
+
+        guest = (PjsGuestPackage){0};
         int32_t package_result = pjs_package_open_ipod_photo(
             disk_package.bytes, disk_package.length, &guest);
-        if (package_result == 0) {
-            runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
-            disk_runtime_attempted = true;
-            runtime_active = qjs_runtime_boot(&guest);
-            runtime_from_disk = runtime_active;
-            if (runtime_active) {
-                boot_source = PJS_BOOT_SOURCE_DISK;
-            } else {
-                boot_failure_stage = PJS_BOOT_FAILURE_QUICKJS;
-                boot_failure_code = qjs_runtime_error_code();
-            }
-        } else {
-            boot_failure_stage = PJS_BOOT_FAILURE_PACKAGE;
-            boot_failure_code = error_magnitude(package_result);
+        if (package_result != 0) {
+            remember_boot_failure(PJS_BOOT_FAILURE_PACKAGE,
+                                  error_magnitude(package_result),
+                                  &boot_failure_stage, &boot_failure_code);
+            pjs_storage_release(&disk_package);
+            continue;
         }
-    } else {
-        boot_failure_stage = PJS_BOOT_FAILURE_STORAGE;
-        boot_failure_code = pjs_storage_last_error();
+
+        runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
+        runtime_active = qjs_runtime_boot(&guest);
+        if (runtime_active && qjs_runtime_frame(&initial_input)) {
+            runtime_from_disk = true;
+            boot_source = boot_slots[index].source;
+            break;
+        }
+
+        uint32_t failure_stage = runtime_active ? PJS_BOOT_FAILURE_FRAME :
+                                                  PJS_BOOT_FAILURE_QUICKJS;
+        remember_boot_failure(failure_stage,
+                              qjs_runtime_error_code(),
+                              &boot_failure_stage, &boot_failure_code);
+        if (runtime_active) qjs_runtime_shutdown();
+        runtime_active = false;
+        pjs_storage_release(&disk_package);
+        reset_core_after_failed_guest();
     }
     if (!runtime_active) {
         pjs_storage_release(&disk_package);
-        if (disk_runtime_attempted) reset_core_after_failed_guest();
         guest = (PjsGuestPackage){0};
         int32_t embedded_result = pjs_package_open_ipod_photo(
             pjs_embedded_package, pjs_embedded_package_length, &guest);
@@ -185,7 +238,12 @@ void kernel_main_phase1(void)
         if (embedded_result == 0) {
             runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
             runtime_active = qjs_runtime_boot(&guest);
-            if (!runtime_active) {
+            if (runtime_active && !qjs_runtime_frame(&initial_input)) {
+                boot_failure_stage = PJS_BOOT_FAILURE_FRAME;
+                boot_failure_code = qjs_runtime_error_code();
+                qjs_runtime_shutdown();
+                runtime_active = false;
+            } else if (!runtime_active) {
                 boot_failure_stage = PJS_BOOT_FAILURE_EMBEDDED_QUICKJS;
                 boot_failure_code = qjs_runtime_error_code();
             }
@@ -198,20 +256,7 @@ void kernel_main_phase1(void)
         (runtime_from_disk ? PJS_RUNTIME_READY_DISK : PJS_RUNTIME_READY) :
         PJS_RUNTIME_ERROR;
 
-    PjsInputState input = {0};
-    input_poll(&input);
-    PjsScheduler initial_scheduler = {0};
-    PjsCoreInput initial_input = core_input(&input, &power, &initial_scheduler, 0,
-                                            cache_enabled, 0u, runtime_status);
-    if (runtime_active && !qjs_runtime_frame(&initial_input)) {
-        boot_failure_stage = PJS_BOOT_FAILURE_FRAME;
-        boot_failure_code = qjs_runtime_error_code();
-        qjs_runtime_shutdown();
-        runtime_active = false;
-        runtime_status = runtime_failure_status();
-        initial_input.runtime_status = runtime_status;
-        if (runtime_from_disk) pjs_storage_release(&disk_package);
-    }
+    initial_input.runtime_status = runtime_status;
     pjs_core_set_boot_diagnostic(boot_source, boot_failure_stage,
                                  boot_failure_code,
                                  pjs_storage_sector_read_count());

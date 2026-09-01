@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "status": "host-validated; physical result pending",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-package-lifecycle.ipod",
+    "bytes": 1048476,
+    "sha256": "a55eeb41b3a9afb35b525aa1c5cfbf5ad015d1b9136ea724a32c57b85f963702"
+  },
+  "activePackage": {
+    "file": "ACTIVE.PKT",
+    "bytes": 174792,
+    "sha256": "d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b"
+  },
+  "appPackageArtifact": {
+    "file": "APP.PKT",
+    "bytes": 174792,
+    "sha256": "d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b"
+  },
+  "rejectedPendingPackage": {
+    "file": "PENDING.PKT",
+    "bytes": 174792,
+    "sha256": "eca8936f299161b3668622247e740bae0de93ddd6dfcf432525e6404cf1df630"
+  },
+  "embeddedFallbackSha256": "d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b",
+  "expectedBoots": [
+    "ACTV P02 R#####",
+    "EMBD P02 R#####"
+  ],
+  "checks": [
+    "ARM firmware build",
+    "static image verification",
+    "Phase 1 image verification",
+    "host QuickJS generated guest",
+    "fragmented multi-cluster FAT32 loader",
+    "PowerShell package-slot backup/stage/restore round trip"
+  ]
+}

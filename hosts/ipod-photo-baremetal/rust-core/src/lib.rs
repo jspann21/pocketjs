@@ -338,11 +338,16 @@ fn boot_diagnostic_text(
 ) -> String {
     let mut output = String::with_capacity(20);
     output.push_str(match source {
-        1 => "DISK",
-        2 => "EMBED",
+        1 => "PEND",
+        2 => "ACTV",
+        3 => "LAST",
+        4 => "APP",
+        5 => "EMBD",
         _ => "FAIL",
     });
-    if failure_stage != 0 {
+    if failure_stage == 0 {
+        output.push_str(" OK");
+    } else {
         output.push(' ');
         output.push(match failure_stage {
             1 => 'S',
@@ -376,9 +381,9 @@ pub extern "C" fn pjs_core_set_boot_diagnostic(
     };
     let text = boot_diagnostic_text(source, failure_stage, failure_code, sector_reads);
     let panel_color = match source {
-        1 => abgr(0, 92, 110, 255),
-        2 if failure_stage == 0 => abgr(96, 38, 125, 255),
-        2 => abgr(142, 75, 0, 255),
+        1..=4 => abgr(0, 92, 110, 255),
+        5 if failure_stage == 0 => abgr(96, 38, 125, 255),
+        5 => abgr(142, 75, 0, 255),
         _ => abgr(150, 20, 38, 255),
     };
 
