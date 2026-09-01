@@ -5,12 +5,65 @@ Status: hardware-qualified on a physical iPod Photo/Color A1099 for the scope li
 Qualification date: 2026-09-01
 Boot path: reversible Rockbox bootloader `/rockbox.ipod` handoff only.
 
-## Final qualified runtime candidate
+## Original fully qualified runtime candidate
 
 - File: `pocketjs-a1099-phase1-runtime-hold.ipod`
 - SHA-256: `c9a1d513ad2e440c054ceb2f116d26e334c5737071c8d5e87460cfc9f8251152`
 - Valid disk guest: `/POCKETJS/APP.PKT`
 - APP.PKT SHA-256: `0a85c16910a804faf0b5a1d486eea1b70a18e749dedd539a693bce8962781074`
+
+This qualification applies only to the exact candidate and package hashes above.
+Every newly built image—including the direct-build workflow artifact—starts as
+unqualified until its own static report and physical result are captured. Use
+`PHASE1_BATCH_TEST.md` to exercise the complete gate in one reversible staging
+session and retain `PHASE1_BATCH_EVIDENCE.json` with the tested artifact.
+
+## Expanded HostOps qualification
+
+- File: `pocketjs-a1099-phase1-hostops-hold2.ipod`
+- SHA-256: `6babe891ac53f09a0a3c71da1e14849713f6bc60136bad73571862e4bdcdb3f7`
+- APP.PKT SHA-256: `fc5cc221f6c6c1a951d3657eabf832ec5c0b906c703d5b73dfac0a0cfe3ff579`
+- Original Rockbox restored SHA-256: `e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd`
+
+This exact candidate physically qualified typed-array property batching,
+PSM_8888 texture upload and image binding, explicit core animation with
+cancellation/restart, focus/active HostOps calls, and a 250 ms bounded QuickJS
+frame watchdog. The runtime chip remained cyan through five Hold transitions.
+Input and heartbeat remained prompt, the checker rendered correctly, both
+animation directions completed, and no partial-update artifacts appeared.
+
+The animation was visibly slow/choppy and the performance chip briefly reached
+orange on a Hold edge. Neither event produced a runtime fault, dropped-tick
+report, stopped heartbeat, input delay, or rendering artifact. The exact
+Rockbox backup was restored and no transaction state remained.
+
+The corrupt-package/fallback matrix was not repeated for this later artifact;
+that part of the qualification remains attached to the original candidate
+above until a future combined campaign exercises it again.
+
+## Ordinary framework app qualification
+
+- File: `pocketjs-a1099-phase1-standard-app2.ipod`
+- SHA-256: `3695faaab21e2632a20dcb1305b92fb0a7f4007cc4106f185bd509e5560395d4`
+- APP.PKT SHA-256: `d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b`
+- Embedded fallback package SHA-256: `d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b`
+- Original Rockbox restored SHA-256: `e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd`
+
+This exact candidate physically qualified the canonical `ipod-photo` target,
+the ordinary `pocket build --target ipod-photo` compiler/packer path, a
+generated Solid application, baked styles and font atlases, the standard
+`frame(buttons, analog?, touches?, hits?, touchSurfaces?)` callback, portable
+button translation, initial retained rendering, and reactive text replacement.
+The labelled app rendered correctly; center Select and wheel input changed
+their respective `WAIT` labels to `OK`; the screen stayed readable without
+observed artifacts.
+
+The staged disk package and embedded fallback were intentionally byte-exact,
+so this observation does not distinguish which source supplied the guest.
+Large multi-cluster FAT32 package loading therefore remains a separate storage
+gate. The installation record verified both staged hashes, and restoration
+verified the original Rockbox hash with no backup, transaction, or stale-state
+files remaining.
 
 ## Qualified scope
 

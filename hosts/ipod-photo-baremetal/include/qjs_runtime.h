@@ -15,6 +15,7 @@
 #define PJS_QJS_ERROR_FRAME_CALL 6u
 #define PJS_QJS_ERROR_PENDING_JOB 7u
 #define PJS_QJS_ERROR_FRAME_BUDGET 8u
+#define PJS_QJS_ERROR_BOOT_BUDGET 9u
 
 bool qjs_runtime_boot(const PjsGuestPackage *guest);
 bool qjs_runtime_frame(const PjsCoreInput *input);

@@ -1,0 +1,32 @@
+PocketJS A1099 HostOps + Hold watchdog result
+
+first screen appeared after: 1seconds
+runtime chip initially: cyan
+cyan/magenta checker square visible at left of middle band: yes
+checker has distinct alternating color blocks: yes
+yellow runner and dark rail visible: ye / no
+Select moved yellow runner across rail: prompt, but slow/choppy
+second Select moved runner back: prompt, but slow/choppy
+magenta guest pulse visible and changing: yes
+guest lane and wheel marker still work: yes
+guest marker cyan while wheel touched: yes
+guest marker changed for Menu/Play: yes
+guest marker red while Hold active: yes
+runtime chip after 5 Hold on/off transitions: cyan
+thin red native Hold strip appeared/disappeared promptly: yes
+native buttons and wheel after Hold transitions: prompt
+heartbeat after 30 seconds: normal 
+battery bar plausible: yes
+cache chip: greener
+USB chip while connected: blue
+performance chip worst color: orange only on hold switch flip action
+partial-update artifacts: none 
+Menu+Play reset: yes 
+anything unexpected:
+
+After testing, run RESTORE.ps1 and confirm normal Rockbox boot: yes / no
+
+Return this completed RESULTS.txt plus INSTALL-STATUS.json and
+RESTORE-STATUS.json from this folder. A clear photo or short video of the
+checker and moving runner is useful if either visual is ambiguous.
+

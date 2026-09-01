@@ -20,6 +20,16 @@
     borderWidth: 71,
   };
   const ABSOLUTE = 1;
+  const ANALOG_CENTER = 0x8080;
+  const BTN = {
+    START: 0x0008,
+    RIGHT: 0x0020,
+    LEFT: 0x0080,
+    TRIANGLE: 0x1000,
+    CIRCLE: 0x2000,
+  };
+  const ipodInput = ui.__ipodInput;
+  if (!ipodInput) throw new Error("PocketJS iPod input side channel missing");
 
   const abgr = (r, g, b, a = 255) =>
     ((r & 255) | ((g & 255) << 8) | ((b & 255) << 16) | ((a & 255) << 24)) >>> 0;
@@ -37,6 +47,18 @@
     return node;
   }
 
+  function setPropBatch(records) {
+    const values = new Float64Array(records.length * 3);
+    for (let index = 0; index < records.length; ++index) {
+      values[index * 3] = records[index][0];
+      values[index * 3 + 1] = records[index][1];
+      values[index * 3 + 2] = records[index][2];
+    }
+    /* Pass the typed-array view, rather than its backing buffer, to exercise
+     * the offset/length-aware QuickJS HostOp path used by framework batches. */
+    ui.setPropBatch(values);
+  }
+
   /* This lane is guest-owned. It is deliberately placed in the unused strip
    * between the native power row and Hold overlay, so its presence proves that
    * the embedded .pocket package was admitted, evaluated by QuickJS, and
@@ -46,8 +68,18 @@
   ui.setProp(lane, PROP.borderWidth, 1);
   ui.setProp(lane, PROP.borderColor, abgr(82, 103, 142));
 
-  const marker = view(8, 36, 10, 12, abgr(238, 76, 255));
+  const marker = ui.createNode(0);
+  if (!marker) throw new Error("PocketJS marker allocation failed");
+  setPropBatch([
+    [marker, PROP.position, ABSOLUTE],
+    [marker, PROP.left, 8],
+    [marker, PROP.top, 36],
+    [marker, PROP.width, 10],
+    [marker, PROP.height, 12],
+    [marker, PROP.background, abgr(238, 76, 255)],
+  ]);
   ui.setProp(marker, PROP.radius, 3);
+  ui.insertBefore(ROOT, marker, 0);
 
   const pulse = view(112, 4, 8, 8, abgr(238, 76, 255));
   ui.setProp(pulse, PROP.radius, 2);
@@ -58,16 +90,17 @@
   let lastOpacity = -1;
   let lastPulse = -1;
 
-  globalThis.frame = function frame(
-    buttons,
-    wheelDelta,
-    wheelPosition,
-    wheelTouched,
-    hold,
-    batteryMv,
-    powerFlags,
-  ) {
+  /* Generated PocketJS bundles call frame(buttons, analog?, touches?, hits?,
+   * touchSurfaces?).  The A1099 has no nub or touch panel, so the host passes
+   * only the standard button mask and centered analog word.  Target-local
+   * wheel/Hold/telemetry facts come from the private side channel above. */
+  globalThis.frame = function frame(buttons, analog) {
     ticks = (ticks + 1) >>> 0;
+
+    const wheelDelta = ipodInput.wheelDelta | 0;
+    const wheelPosition = ipodInput.wheelPosition >>> 0;
+    const wheelTouched = !!ipodInput.wheelTouched;
+    const hold = !!ipodInput.hold;
 
     const position = Math.max(0, Math.min(95, wheelPosition | 0));
     const x = 8 + Math.floor((position * 194) / 95);
@@ -79,10 +112,11 @@
     let color = abgr(238, 76, 255);
     if (hold) color = abgr(255, 78, 90);
     else if (wheelTouched) color = abgr(0, 222, 255);
-    else if (buttons & 1) color = abgr(45, 235, 105);       // Select
-    else if (buttons & 16) color = abgr(255, 92, 108);     // Menu
-    else if (buttons & 8) color = abgr(255, 218, 50);      // Play
+    else if (buttons & BTN.CIRCLE) color = abgr(45, 235, 105); // Select
+    else if (buttons & BTN.TRIANGLE) color = abgr(255, 92, 108); // Menu
+    else if (buttons & BTN.START) color = abgr(255, 218, 50); // Play
     else if (wheelDelta) color = abgr(120, 164, 255);
+    else if (analog !== ANALOG_CENTER) color = abgr(255, 145, 35);
     if (color !== lastColor) {
       ui.setProp(marker, PROP.background, color);
       lastColor = color;
@@ -100,10 +134,6 @@
       lastPulse = pulsePhase;
     }
 
-    /* Consume the values so this smoke app also validates number conversion
-     * across the C/QuickJS boundary without forcing a visual change each tick. */
-    void batteryMv;
-    void powerFlags;
     return ticks;
   };
 })();

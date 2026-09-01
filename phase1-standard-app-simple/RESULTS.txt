@@ -1,0 +1,14 @@
+PocketJS A1099 ordinary-app result
+
+labelled ordinary-app screen appeared: yes / no
+APP showed OK: yes / no
+center button changed SELECT from WAIT to OK: yes / no
+wheel changed WHEEL from WAIT to OK: yes / no
+screen stayed readable with no obvious artifacts: yes / no
+anything unexpected:
+
+After testing, RESTORE.ps1 said RESTORE VERIFIED: yes / no
+Normal Rockbox boot after restore: yes / no
+
+Return this completed file plus INSTALL-STATUS.json and RESTORE-STATUS.json.
+Send one clear photo only if the labelled screen did not appear or was wrong.

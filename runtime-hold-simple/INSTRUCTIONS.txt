@@ -1,0 +1,18 @@
+PocketJS A1099 Phase 1 runtime Hold-transition test
+
+1. Keep APP.PKT at F:\POCKETJS\APP.PKT (same SHA as previous storage test).
+2. Verify pocketjs-a1099-phase1-runtime-hold.ipod SHA-256:
+   c9a1d513ad2e440c054ceb2f116d26e334c5737071c8d5e87460cfc9f8251152
+3. Install:
+   python .\handoff.py install --mount "F:\" --probe .\pocketjs-a1099-phase1-runtime-hold.ipod
+4. Status:
+   python .\handoff.py status --mount "F:\"
+5. Boot. Toggle Hold on/off at least five times over 30 seconds while also using wheel and buttons.
+
+Runtime chip:
+  cyan   = FAT32 disk guest active and healthy
+  orange = QuickJS 100 ms frame watchdog expired
+  red    = other QuickJS/HostOps error
+
+The native Hold indication is now a thin red strip instead of the previous 44-pixel overlay.
+The performance chip should stay green/yellow. It must not latch red.

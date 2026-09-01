@@ -189,6 +189,7 @@ describe("experimental Nokia E7 runtime profile", () => {
       "macos-app",
       "linux-app",
       "web-app",
+      "ipod-photo",
     ]);
     expect(POCKET_TARGETS).not.toHaveProperty(SYMBIAN_E7_DEV_TARGET_ID);
     expect(SYMBIAN_E7_DEV_HOST_ABI).toBe(4);

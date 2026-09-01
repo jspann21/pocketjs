@@ -1,0 +1,41 @@
+{
+  "commit": "3c42528fef0fddb82e58b872e088a21035e396bc",
+  "coreBackend": "pocketjs-core-rust",
+  "hardwareQualified": false,
+  "image": {
+    "bytes": 876360,
+    "firstWord": "0xea00003e",
+    "sha256": "f943dc8acb4fea7c03426043c64d9dc3799035b5d4c72d05019631f359c6476e"
+  },
+  "installation": "reversible /rockbox.ipod handoff only",
+  "ipod": {
+    "bytes": 876368,
+    "checksum": "0x0558999e",
+    "model": "ipco",
+    "sha256": "6babe891ac53f09a0a3c71da1e14849713f6bc60136bad73571862e4bdcdb3f7"
+  },
+  "memory": {
+    "heapStart": "0x0014bea0",
+    "ramEnd": "0x02000000",
+    "storedBytes": 876360
+  },
+  "schema": 1,
+  "symbols": {
+    "PJS_CORE_BACKEND_RUST": "0x000c6c6c",
+    "__heap_start": "0x0014bea0",
+    "__image_end": "0x000d5f48",
+    "__ram_end": "0x02000000",
+    "_start": "0x00000000",
+    "irq_dispatch": "0x0000173c",
+    "kernel_main_phase1": "0x000011c8",
+    "lcd_present_damage": "0x000007d8",
+    "pjs_core_init": "0x00005bb0",
+    "pjs_core_render_damage": "0x00006638",
+    "pjs_core_step": "0x00008efc",
+    "pjs_heap_init": "0x000019c8",
+    "reset_handler": "0x00000100",
+    "timer_irq_init": "0x00001930",
+    "vector_irq": "0x00000314"
+  },
+  "target": "ipod-photo-a1099-phase1"
+}

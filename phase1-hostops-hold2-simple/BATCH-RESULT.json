@@ -1,0 +1,66 @@
+{
+  "candidate": {
+    "commit": "3c42528fef0fddb82e58b872e088a21035e396bc",
+    "imageName": "pocketjs-a1099-phase1-hostops-hold2",
+    "ipodSha256": "6babe891ac53f09a0a3c71da1e14849713f6bc60136bad73571862e4bdcdb3f7",
+    "workflowRun": "local-hostops-hold2"
+  },
+  "device": {
+    "model": "",
+    "panel": "",
+    "storage": ""
+  },
+  "kind": "phase1-qualification-result",
+  "native": {
+    "bootloaderHandoff": null,
+    "controls": null,
+    "diskModeRecovery": null,
+    "displayEdges": null,
+    "framebuffer": null,
+    "heartbeat": null,
+    "hold": null,
+    "menuPlayReset": null,
+    "restoreSucceeded": null,
+    "selectPattern": null,
+    "wheel": null
+  },
+  "notes": "",
+  "operator": "",
+  "runtime": {
+    "chip": null,
+    "guestButtonsReacted": null,
+    "guestHoldReacted": null,
+    "guestLaneVisible": null,
+    "guestPulseChanging": null,
+    "guestTouchCyan": null,
+    "guestWheelPrompt": null,
+    "holdRuntimeStayedCyan": null
+  },
+  "schema": 1,
+  "storage": {
+    "corruptPackageRejected": null,
+    "embeddedFallbackLoaded": null,
+    "validDiskGuestLoaded": null
+  },
+  "telemetry": {
+    "batteryBarColor": null,
+    "batteryFillPercent": null,
+    "batteryPlausible": null,
+    "cacheChip": null,
+    "cacheGreen": null,
+    "chargingChip": null,
+    "chargingTransitionObserved": null,
+    "performanceNotRed": null,
+    "usbChip": null,
+    "usbTransitionObserved": null
+  },
+  "timing": {
+    "firstScreenSeconds": null,
+    "heartbeat": null,
+    "inputLatency": null,
+    "observationSeconds": null,
+    "partialUpdateArtifacts": "",
+    "performanceChip": null,
+    "runtimeRedAfterSeconds": null
+  }
+}

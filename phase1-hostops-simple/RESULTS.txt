@@ -1,0 +1,23 @@
+PocketJS A1099 Phase 1 HostOps/regression result
+
+first screen appeared after: 1 seconds
+runtime chip initially: cyan
+magenta guest pulse visible and changing: yes
+guest lane visible: yes
+guest marker followed wheel: prompt
+guest marker cyan while wheel touched: yes
+guest marker changed for Select/Menu/Play: yes
+guest marker red while Hold active: yes
+native buttons and wheel: prompt
+heartbeat after 30 seconds: normal 
+battery bar plausible: yes
+cache chip: green 
+USB chip while connected: blue
+performance chip worst color:orange
+partial-update artifacts: none
+runtime chip ever became orange or red: orange when flipping hold switch action
+Menu+Play reset: yes
+anything unexpected: no
+
+After testing, run RESTORE.ps1 and confirm normal Rockbox boot: yes / no
+

@@ -111,6 +111,37 @@ jobs:
           nm "$E" | grep -F ' cache_take_ownership_enabled'
           nm "$E" | grep -F ' power_telemetry_sample'
 
+      - name: Generate Phase-1 batch evidence bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          H=hosts/ipod-photo-baremetal
+          B="$H/build-phase1"
+          CANDIDATE_COMMIT="$(git rev-parse HEAD)"
+          python3 "$H/tools/build_phase1_report.py" \
+            --elf "$B/pocketjs-a1099-phase1-qualified.elf" \
+            --bin "$B/pocketjs-a1099-phase1-qualified.bin" \
+            --ipod "$B/pocketjs-a1099-phase1-qualified.ipod" \
+            --output "$B/PHASE1_BUILD_REPORT.json" \
+            --commit "$CANDIDATE_COMMIT"
+          python3 "$H/tools/phase1_batch.py" prepare \
+            --build-dir "$B" \
+            --image-name pocketjs-a1099-phase1-qualified \
+            --build-report "$B/PHASE1_BUILD_REPORT.json" \
+            --commit "$CANDIDATE_COMMIT" \
+            --workflow-run "$GITHUB_RUN_ID" \
+            --output "$B/PHASE1_BATCH_MANIFEST.json" \
+            --result-template "$B/PHASE1_BATCH_RESULT.json"
+          (
+            cd "$B"
+            sha256sum \
+              pocketjs-a1099-phase1-qualified.{elf,bin,ipod,map,dis} \
+              generated/recovery.pocket \
+              PHASE1_{BUILD_REPORT,BATCH_MANIFEST}.json \
+              > PHASE1_BATCH_SHA256SUMS.txt
+            sha256sum -c PHASE1_BATCH_SHA256SUMS.txt
+          )
+
       - name: Upload direct-build firmware
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -118,6 +149,14 @@ jobs:
           path: |
             hosts/ipod-photo-baremetal/build-phase1/pocketjs-a1099-phase1-qualified.ipod
             hosts/ipod-photo-baremetal/build-phase1/pocketjs-a1099-phase1-qualified.elf
+            hosts/ipod-photo-baremetal/build-phase1/pocketjs-a1099-phase1-qualified.bin
+            hosts/ipod-photo-baremetal/build-phase1/pocketjs-a1099-phase1-qualified.map
+            hosts/ipod-photo-baremetal/build-phase1/pocketjs-a1099-phase1-qualified.dis
+            hosts/ipod-photo-baremetal/build-phase1/generated/recovery.pocket
+            hosts/ipod-photo-baremetal/build-phase1/PHASE1_BUILD_REPORT.json
+            hosts/ipod-photo-baremetal/build-phase1/PHASE1_BATCH_MANIFEST.json
+            hosts/ipod-photo-baremetal/build-phase1/PHASE1_BATCH_RESULT.json
+            hosts/ipod-photo-baremetal/build-phase1/PHASE1_BATCH_SHA256SUMS.txt
             phase0-regression.log
             phase1-qualified-build.log
             TOOLCHAIN.txt

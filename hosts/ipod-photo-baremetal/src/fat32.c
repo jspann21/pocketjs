@@ -36,6 +36,15 @@ static bool fat32_partition_type(uint8_t type)
            type == FAT32_PARTITION_HIDDEN || type == FAT32_PARTITION_HIDDEN_LBA;
 }
 
+static uint32_t divide_by_power_of_two(uint32_t value, uint32_t divisor)
+{
+    while (divisor > 1u) {
+        value >>= 1;
+        divisor >>= 1;
+    }
+    return value;
+}
+
 static bool looks_like_fat32_bpb(const uint8_t sector[PJS_STORAGE_SECTOR_BYTES])
 {
     return sector[510] == 0x55u && sector[511] == 0xaau &&
@@ -97,10 +106,16 @@ int pjs_fat32_mount(PjsFat32 *fat, PjsSectorReadFn reader, void *context)
     if (partition_sectors != 0u && total > partition_sectors) {
         return PJS_STORAGE_ERR_BPB;
     }
+    uint64_t partition_end = (uint64_t)partition_lba +
+                             (partition_sectors != 0u ? partition_sectors : total);
+    if (partition_end > (uint64_t)UINT32_MAX + 1u) {
+        return PJS_STORAGE_ERR_BPB;
+    }
     uint64_t overhead = (uint64_t)reserved + (uint64_t)fat_count * fat_sectors;
     if (overhead >= total) return PJS_STORAGE_ERR_BPB;
     uint32_t data_sectors = total - (uint32_t)overhead;
-    uint32_t cluster_count = data_sectors / sectors_per_cluster;
+    uint32_t cluster_count = divide_by_power_of_two(data_sectors,
+                                                    sectors_per_cluster);
     uint64_t fat_entries = ((uint64_t)fat_sectors * PJS_STORAGE_SECTOR_BYTES) / 4u;
     if (cluster_count < 65525u || fat_entries < (uint64_t)cluster_count + 2u) {
         return PJS_STORAGE_ERR_BPB;
@@ -109,8 +124,13 @@ int pjs_fat32_mount(PjsFat32 *fat, PjsSectorReadFn reader, void *context)
 
     fat->partition_lba = partition_lba;
     fat->partition_sectors = partition_sectors != 0u ? partition_sectors : total;
-    fat->fat_lba = partition_lba + reserved;
-    fat->data_lba = partition_lba + (uint32_t)overhead;
+    uint64_t fat_lba = (uint64_t)partition_lba + reserved;
+    uint64_t data_lba = (uint64_t)partition_lba + overhead;
+    if (fat_lba > UINT32_MAX || data_lba > UINT32_MAX) {
+        return PJS_STORAGE_ERR_BPB;
+    }
+    fat->fat_lba = (uint32_t)fat_lba;
+    fat->data_lba = (uint32_t)data_lba;
     fat->fat_sectors = fat_sectors;
     fat->root_cluster = root_cluster;
     fat->cluster_count = cluster_count;
@@ -124,6 +144,17 @@ static bool cluster_valid(const PjsFat32 *fat, uint32_t cluster)
     return cluster >= 2u && cluster - 2u < fat->cluster_count;
 }
 
+static bool sector_range_valid(const PjsFat32 *fat, uint64_t first,
+                               uint32_t count)
+{
+    uint64_t partition_first = fat->partition_lba;
+    uint64_t partition_end = partition_first + fat->partition_sectors;
+    uint64_t end = first + count;
+    return count != 0u && first >= partition_first && first <= UINT32_MAX &&
+           end > first && end <= partition_end &&
+           end <= (uint64_t)UINT32_MAX + 1u;
+}
+
 static int next_cluster(PjsFat32 *fat, uint32_t cluster, uint32_t *next_out)
 {
     if (!cluster_valid(fat, cluster) || next_out == 0) return PJS_STORAGE_ERR_CHAIN;
@@ -134,7 +165,9 @@ static int next_cluster(PjsFat32 *fat, uint32_t cluster, uint32_t *next_out)
         return PJS_STORAGE_ERR_CHAIN;
     }
     uint8_t sector[PJS_STORAGE_SECTOR_BYTES];
-    if (!fat->read_sector(fat->context, fat->fat_lba + sector_index, sector)) {
+    uint64_t lba = (uint64_t)fat->fat_lba + sector_index;
+    if (!sector_range_valid(fat, lba, 1u)) return PJS_STORAGE_ERR_CHAIN;
+    if (!fat->read_sector(fat->context, (uint32_t)lba, sector)) {
         return PJS_STORAGE_ERR_ATA;
     }
     uint32_t next = le32(sector + byte_index) & 0x0fffffffu;
@@ -143,9 +176,15 @@ static int next_cluster(PjsFat32 *fat, uint32_t cluster, uint32_t *next_out)
     return PJS_STORAGE_OK;
 }
 
-static uint32_t cluster_lba(const PjsFat32 *fat, uint32_t cluster)
+static bool cluster_lba(const PjsFat32 *fat, uint32_t cluster,
+                        uint32_t *lba_out)
 {
-    return fat->data_lba + (cluster - 2u) * fat->sectors_per_cluster;
+    if (!cluster_valid(fat, cluster) || lba_out == 0) return false;
+    uint64_t first = (uint64_t)fat->data_lba +
+                     (uint64_t)(cluster - 2u) * fat->sectors_per_cluster;
+    if (!sector_range_valid(fat, first, fat->sectors_per_cluster)) return false;
+    *lba_out = (uint32_t)first;
+    return true;
 }
 
 static bool name_matches(const uint8_t *entry, const char name[11])
@@ -172,10 +211,11 @@ static int find_entry(PjsFat32 *fat, uint32_t directory_cluster,
     uint32_t visited = 0u;
     uint8_t sector[PJS_STORAGE_SECTOR_BYTES];
     for (;;) {
-        if (!cluster_valid(fat, cluster) || visited++ > fat->cluster_count) {
+        if (!cluster_valid(fat, cluster) || visited++ >= fat->cluster_count) {
             return PJS_STORAGE_ERR_CHAIN;
         }
-        uint32_t first = cluster_lba(fat, cluster);
+        uint32_t first = 0u;
+        if (!cluster_lba(fat, cluster, &first)) return PJS_STORAGE_ERR_CHAIN;
         for (uint32_t sec = 0u; sec < fat->sectors_per_cluster; ++sec) {
             if (!fat->read_sector(fat->context, first + sec, sector)) {
                 return PJS_STORAGE_ERR_ATA;
@@ -256,10 +296,11 @@ int pjs_fat32_read_short_file(PjsFat32 *fat,
     uint32_t visited = 0u;
     uint8_t sector[PJS_STORAGE_SECTOR_BYTES];
     while (remaining != 0u) {
-        if (!cluster_valid(fat, cluster) || visited++ > fat->cluster_count) {
+        if (!cluster_valid(fat, cluster) || visited++ >= fat->cluster_count) {
             return PJS_STORAGE_ERR_CHAIN;
         }
-        uint32_t first = cluster_lba(fat, cluster);
+        uint32_t first = 0u;
+        if (!cluster_lba(fat, cluster, &first)) return PJS_STORAGE_ERR_CHAIN;
         for (uint32_t sec = 0u; sec < fat->sectors_per_cluster && remaining != 0u; ++sec) {
             if (!fat->read_sector(fat->context, first + sec, sector)) {
                 return PJS_STORAGE_ERR_ATA;

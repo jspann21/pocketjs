@@ -10,12 +10,33 @@
 #define PJS_QJS_MEMORY_LIMIT (6u * 1024u * 1024u)
 #define PJS_QJS_GC_THRESHOLD (512u * 1024u)
 #define PJS_QJS_STACK_LIMIT (192u * 1024u)
-#define PJS_QJS_BOOT_BUDGET_US 500000u
-#define PJS_QJS_FRAME_BUDGET_US 100000u
+/* Ordinary compiler bundles are much larger than the hand-written recovery
+ * guest.  Preserve a hard boot bound, but allow the 80 MHz PP5020 enough time
+ * to parse, mount styles/fonts, and create the first retained tree. */
+#define PJS_QJS_BOOT_BUDGET_US 30000000u
+/* The first physical A1099 HostOps candidate tripped the 100 ms watchdog on
+ * the Hold edge while the guest performed retained-UI mutations. Keep frames
+ * bounded, but leave enough PP5020 headroom for an interactive mutation burst.
+ * Boot has a separate, deliberately larger bound because it parses the whole
+ * generated framework bundle and installs baked assets. */
+#define PJS_QJS_FRAME_BUDGET_US 250000u
 #define PJS_QJS_MAX_PENDING_JOBS 64u
 #define PJS_QJS_MALLOC_OVERHEAD 8u
 #define PJS_QJS_ROOT_ID 1
 #define PJS_QJS_HOST_ABI 1
+
+/* The A1099 input decoder intentionally uses a compact, device-local bit
+ * layout (input.h) for the native diagnostic screen.  The guest never sees
+ * those bits: generated PocketJS apps consume the portable BTN mask from
+ * contracts/spec/spec.ts.  Keep the values here in lock-step with that table
+ * without making the freestanding target depend on generated TypeScript. */
+#define PJS_FRAME_BTN_SELECT   0x0001u
+#define PJS_FRAME_BTN_START    0x0008u
+#define PJS_FRAME_BTN_RIGHT    0x0020u
+#define PJS_FRAME_BTN_LEFT     0x0080u
+#define PJS_FRAME_BTN_TRIANGLE 0x1000u
+#define PJS_FRAME_BTN_CIRCLE   0x2000u
+#define PJS_FRAME_ANALOG_CENTER 0x8080u
 
 /* These are deliberately the first PocketJS HostOps required by the embedded
  * recovery guest. The ABI surface grows append-only toward the complete host
@@ -25,16 +46,41 @@ typedef enum {
     HOST_DESTROY_NODE,
     HOST_INSERT_BEFORE,
     HOST_REMOVE_CHILD,
+    HOST_SET_STYLE,
     HOST_SET_PROP,
+    HOST_SET_PROP_BATCH,
+    HOST_SET_TEXT,
+    HOST_REPLACE_TEXT,
+    HOST_UPLOAD_TEXTURE,
+    HOST_SET_IMAGE,
+    HOST_SET_SPRITE,
+    HOST_ANIMATE,
+    HOST_CANCEL_ANIM,
+    HOST_SET_FOCUS,
+    HOST_SET_ACTIVE,
+    HOST_LOAD_STYLES,
+    HOST_LOAD_FONT_ATLAS,
+    HOST_MEASURE_TEXT,
+    HOST_FREE_TEXTURE,
+    HOST_UPLOAD_IMG_ENTRY,
 } HostOperation;
 
 static JSRuntime *runtime;
 static JSContext *context;
 static JSValue global_value;
 static JSValue frame_function;
+/* Host-owned, non-portable input facts used only by the embedded recovery
+ * guest.  Standard generated apps receive input through frame() and should
+ * never need this object.  Keeping it under a target-prefixed name prevents
+ * accidental collision with the framework namespace. */
+static JSValue ipod_input_value;
 static uint32_t error_code;
 static uint32_t execution_deadline;
 static bool execution_timed_out;
+/* The first A1099 package used a seven-argument, device-local frame callback.
+ * Keep that package runnable while all new/generated guests use the standard
+ * frame(buttons, analog?, touches?, hits?, touchSurfaces?) shape. */
+static bool legacy_frame_abi;
 
 static size_t qjs_malloc_usable_size(const void *pointer)
 {
@@ -130,6 +176,16 @@ static int argument_i32(JSContext *ctx, int argc, JSValueConst *argv,
     return JS_ToInt32(ctx, value, argv[index]);
 }
 
+static int argument_u32(JSContext *ctx, int argc, JSValueConst *argv,
+                        int index, uint32_t *value)
+{
+    if (index >= argc) {
+        *value = 0u;
+        return 0;
+    }
+    return JS_ToUint32(ctx, value, argv[index]);
+}
+
 static int argument_f64(JSContext *ctx, int argc, JSValueConst *argv,
                         int index, double *value)
 {
@@ -140,6 +196,125 @@ static int argument_f64(JSContext *ctx, int argc, JSValueConst *argv,
     return JS_ToFloat64(ctx, value, argv[index]);
 }
 
+/* Return 1 for an ArrayBuffer/typed-array view, 0 for an invalid value, and
+ * -1 when the argument was omitted. Invalid values are deliberately treated
+ * as a no-op/failed upload by this non-strict native host; they must not leave
+ * a stale QuickJS exception behind. The borrowed pointer is consumed before
+ * this operation returns. */
+static int argument_bytes(JSContext *ctx, int argc, JSValueConst *argv,
+                          int index, const uint8_t **bytes, size_t *length)
+{
+    if (index >= argc) return -1;
+
+    size_t direct_length = 0u;
+    uint8_t *direct = JS_GetArrayBuffer(ctx, &direct_length, argv[index]);
+    if (!JS_HasException(ctx)) {
+        *bytes = direct;
+        *length = direct_length;
+        return 1;
+    }
+    JSValue direct_error = JS_GetException(ctx);
+    JS_FreeValue(ctx, direct_error);
+
+    size_t offset = 0u;
+    size_t view_length = 0u;
+    size_t bytes_per_element = 0u;
+    JSValue buffer = JS_GetTypedArrayBuffer(
+        ctx, argv[index], &offset, &view_length, &bytes_per_element);
+    if (JS_IsException(buffer)) {
+        JSValue error = JS_GetException(ctx);
+        JS_FreeValue(ctx, error);
+        return 0;
+    }
+    size_t buffer_length = 0u;
+    uint8_t *base = JS_GetArrayBuffer(ctx, &buffer_length, buffer);
+    if (JS_HasException(ctx)) {
+        JSValue error = JS_GetException(ctx);
+        JS_FreeValue(ctx, error);
+        JS_FreeValue(ctx, buffer);
+        return 0;
+    }
+    if (offset > buffer_length || view_length > buffer_length - offset) {
+        JS_FreeValue(ctx, buffer);
+        return 0;
+    }
+    (void)bytes_per_element;
+    *bytes = base == 0 ? 0 : base + offset;
+    *length = view_length;
+    JS_FreeValue(ctx, buffer);
+    return 1;
+}
+
+/* QuickJS exposes strings as temporary UTF-8 allocations. The core copies
+ * text into its retained tree before the string is released. */
+static int argument_string(JSContext *ctx, int argc, JSValueConst *argv,
+                           int index, const char **text, size_t *length)
+{
+    if (index >= argc) return -1;
+    *text = JS_ToCStringLen2(ctx, length, argv[index], 0);
+    if (*text != 0) return 1;
+    JSValue error = JS_GetException(ctx);
+    JS_FreeValue(ctx, error);
+    return 0;
+}
+
+/* Translate the local A1099 button packet into the portable PocketJS BTN
+ * mask.  The centre/select key is the ordinary confirm action (CIRCLE), the
+ * menu key is the ordinary cancel/back action (TRIANGLE), and play/pause is
+ * START.  Wheel motion is a one-frame directional pulse; its absolute
+ * position remains a target-local recovery fact in ui.__ipodInput. */
+static uint32_t guest_buttons(const PjsCoreInput *input)
+{
+    uint32_t buttons = 0u;
+    if ((input->buttons & PJS_BUTTON_SELECT) != 0u) {
+        buttons |= PJS_FRAME_BTN_CIRCLE;
+    }
+    if ((input->buttons & PJS_BUTTON_RIGHT) != 0u) {
+        buttons |= PJS_FRAME_BTN_RIGHT;
+    }
+    if ((input->buttons & PJS_BUTTON_LEFT) != 0u) {
+        buttons |= PJS_FRAME_BTN_LEFT;
+    }
+    if ((input->buttons & PJS_BUTTON_PLAY) != 0u) {
+        buttons |= PJS_FRAME_BTN_START;
+    }
+    if ((input->buttons & PJS_BUTTON_MENU) != 0u) {
+        buttons |= PJS_FRAME_BTN_TRIANGLE;
+    }
+    if (input->wheel_delta > 0) buttons |= PJS_FRAME_BTN_RIGHT;
+    if (input->wheel_delta < 0) buttons |= PJS_FRAME_BTN_LEFT;
+    return buttons;
+}
+
+/* Keep the old recovery screen's wheel/Hold/power proof available without
+ * making those device-specific words part of the generated-app frame ABI.
+ * Values are replaced before every guest turn; the object itself is stable so
+ * a recovery guest can retain a reference to it safely. */
+static int update_ipod_input(const PjsCoreInput *input, uint32_t buttons)
+{
+    if (JS_SetPropertyStr(context, ipod_input_value, "buttons",
+                          JS_NewUint32(context, buttons)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "nativeButtons",
+                          JS_NewUint32(context, input->buttons)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "analog",
+                          JS_NewUint32(context, PJS_FRAME_ANALOG_CENTER)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "wheelDelta",
+                          JS_NewInt32(context, input->wheel_delta)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "wheelPosition",
+                          JS_NewUint32(context, input->wheel_position)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "wheelTouched",
+                          JS_NewBool(context, input->wheel_touched != 0u)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "hold",
+                          JS_NewBool(context, input->hold != 0u)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "batteryMv",
+                          JS_NewUint32(context, input->battery_mv)) < 0 ||
+        JS_SetPropertyStr(context, ipod_input_value, "powerFlags",
+                          JS_NewUint32(context, input->power_flags)) < 0) {
+        return -1;
+    }
+    return 0;
+}
+
 static JSValue host_operation(JSContext *ctx, JSValueConst this_value,
                               int argc, JSValueConst *argv, int magic)
 {
@@ -147,6 +322,15 @@ static JSValue host_operation(JSContext *ctx, JSValueConst this_value,
     int32_t a = 0;
     int32_t b = 0;
     int32_t c = 0;
+    uint32_t ua = 0u;
+    uint32_t ub = 0u;
+    uint32_t uc = 0u;
+    int bytes_result = 0;
+    int text_result = 0;
+    const uint8_t *bytes = 0;
+    size_t bytes_length = 0u;
+    const char *text = 0;
+    size_t text_length = 0u;
     double value = 0.0;
 
     switch ((HostOperation)magic) {
@@ -172,6 +356,13 @@ static JSValue host_operation(JSContext *ctx, JSValueConst this_value,
         }
         pjs_ui_remove_child(a, b);
         return JS_UNDEFINED;
+    case HOST_SET_STYLE:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0 ||
+            argument_i32(ctx, argc, argv, 1, &b) < 0) {
+            return JS_EXCEPTION;
+        }
+        pjs_ui_set_style(a, b);
+        return JS_UNDEFINED;
     case HOST_SET_PROP:
         if (argument_i32(ctx, argc, argv, 0, &a) < 0 ||
             argument_i32(ctx, argc, argv, 1, &b) < 0 ||
@@ -180,6 +371,107 @@ static JSValue host_operation(JSContext *ctx, JSValueConst this_value,
         }
         pjs_ui_set_prop(a, (uint32_t)b, value);
         return JS_UNDEFINED;
+    case HOST_SET_PROP_BATCH:
+        bytes_result = argument_bytes(ctx, argc, argv, 0, &bytes, &bytes_length);
+        if (bytes_result == 1) pjs_ui_set_prop_batch(bytes, bytes_length);
+        return JS_UNDEFINED;
+    case HOST_SET_TEXT:
+    case HOST_REPLACE_TEXT:
+        text_result = argument_string(ctx, argc, argv, 1, &text, &text_length);
+        if (text_result == 1) {
+            if (argument_i32(ctx, argc, argv, 0, &a) < 0) {
+                JS_FreeCString(ctx, text);
+                return JS_EXCEPTION;
+            }
+            if (magic == HOST_SET_TEXT) {
+                pjs_ui_set_text(a, (const uint8_t *)text, text_length);
+            } else {
+                pjs_ui_replace_text(a, (const uint8_t *)text, text_length);
+            }
+            JS_FreeCString(ctx, text);
+        }
+        return JS_UNDEFINED;
+    case HOST_UPLOAD_TEXTURE:
+        bytes_result = argument_bytes(ctx, argc, argv, 0, &bytes, &bytes_length);
+        if (bytes_result != 1) return JS_NewInt32(ctx, -1);
+        if (argument_u32(ctx, argc, argv, 1, &ua) < 0 ||
+            argument_u32(ctx, argc, argv, 2, &ub) < 0 ||
+            argument_u32(ctx, argc, argv, 3, &uc) < 0) {
+            return JS_EXCEPTION;
+        }
+        return JS_NewInt32(ctx, pjs_ui_upload_texture(bytes, bytes_length, ua, ub, uc));
+    case HOST_SET_IMAGE:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0 ||
+            argument_i32(ctx, argc, argv, 1, &b) < 0) {
+            return JS_EXCEPTION;
+        }
+        pjs_ui_set_image(a, b);
+        return JS_UNDEFINED;
+    case HOST_SET_SPRITE:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0 ||
+            argument_i32(ctx, argc, argv, 1, &b) < 0 ||
+            argument_u32(ctx, argc, argv, 2, &ua) < 0 ||
+            argument_u32(ctx, argc, argv, 3, &ub) < 0 ||
+            argument_u32(ctx, argc, argv, 4, &uc) < 0) {
+            return JS_EXCEPTION;
+        }
+        pjs_ui_set_sprite(a, b, ua, ub, uc);
+        return JS_UNDEFINED;
+    case HOST_ANIMATE:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0 ||
+            argument_u32(ctx, argc, argv, 1, &ua) < 0 ||
+            argument_f64(ctx, argc, argv, 2, &value) < 0 ||
+            argument_u32(ctx, argc, argv, 4, &ub) < 0) {
+            return JS_EXCEPTION;
+        }
+        if (argument_i32(ctx, argc, argv, 3, &b) < 0 ||
+            argument_i32(ctx, argc, argv, 5, &c) < 0) {
+            return JS_EXCEPTION;
+        }
+        return JS_NewInt32(ctx, pjs_ui_animate(
+            a, ua, value, b < 0 ? 0u : (uint32_t)b, ub,
+            c < 0 ? 0u : (uint32_t)c));
+    case HOST_CANCEL_ANIM:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0) return JS_EXCEPTION;
+        pjs_ui_cancel_anim(a);
+        return JS_UNDEFINED;
+    case HOST_SET_FOCUS:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0) return JS_EXCEPTION;
+        pjs_ui_set_focus(a);
+        return JS_UNDEFINED;
+    case HOST_SET_ACTIVE:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0 ||
+            argument_i32(ctx, argc, argv, 1, &b) < 0) {
+            return JS_EXCEPTION;
+        }
+        pjs_ui_set_active(a, b);
+        return JS_UNDEFINED;
+    case HOST_LOAD_STYLES:
+    case HOST_LOAD_FONT_ATLAS:
+        bytes_result = argument_bytes(ctx, argc, argv, 0, &bytes, &bytes_length);
+        if (bytes_result != 1) return JS_NewBool(ctx, 0);
+        return JS_NewBool(ctx, magic == HOST_LOAD_STYLES ?
+            pjs_ui_load_styles(bytes, bytes_length) != 0 :
+            pjs_ui_load_font_atlas(bytes, bytes_length) != 0);
+    case HOST_MEASURE_TEXT:
+        text_result = argument_string(ctx, argc, argv, 0, &text, &text_length);
+        if (text_result != 1) return JS_NewFloat64(ctx, 0.0);
+        if (argument_u32(ctx, argc, argv, 1, &ua) < 0) {
+            JS_FreeCString(ctx, text);
+            return JS_EXCEPTION;
+        }
+        value = (double)pjs_ui_measure_text(
+            (const uint8_t *)text, text_length, ua);
+        JS_FreeCString(ctx, text);
+        return JS_NewFloat64(ctx, value);
+    case HOST_FREE_TEXTURE:
+        if (argument_i32(ctx, argc, argv, 0, &a) < 0) return JS_EXCEPTION;
+        pjs_ui_free_texture(a);
+        return JS_UNDEFINED;
+    case HOST_UPLOAD_IMG_ENTRY:
+        bytes_result = argument_bytes(ctx, argc, argv, 0, &bytes, &bytes_length);
+        if (bytes_result != 1) return JS_NewInt32(ctx, -1);
+        return JS_NewInt32(ctx, pjs_ui_upload_img_entry(bytes, bytes_length));
     default:
         return JS_ThrowInternalError(ctx, "unknown PocketJS HostOp");
     }
@@ -202,7 +494,23 @@ static int install_host(void)
         add_operation(ui, "destroyNode", 1, HOST_DESTROY_NODE) < 0 ||
         add_operation(ui, "insertBefore", 3, HOST_INSERT_BEFORE) < 0 ||
         add_operation(ui, "removeChild", 2, HOST_REMOVE_CHILD) < 0 ||
+        add_operation(ui, "setStyle", 2, HOST_SET_STYLE) < 0 ||
         add_operation(ui, "setProp", 3, HOST_SET_PROP) < 0 ||
+        add_operation(ui, "setPropBatch", 1, HOST_SET_PROP_BATCH) < 0 ||
+        add_operation(ui, "setText", 2, HOST_SET_TEXT) < 0 ||
+        add_operation(ui, "replaceText", 2, HOST_REPLACE_TEXT) < 0 ||
+        add_operation(ui, "uploadTexture", 4, HOST_UPLOAD_TEXTURE) < 0 ||
+        add_operation(ui, "setImage", 2, HOST_SET_IMAGE) < 0 ||
+        add_operation(ui, "setSprite", 5, HOST_SET_SPRITE) < 0 ||
+        add_operation(ui, "animate", 6, HOST_ANIMATE) < 0 ||
+        add_operation(ui, "cancelAnim", 1, HOST_CANCEL_ANIM) < 0 ||
+        add_operation(ui, "setFocus", 1, HOST_SET_FOCUS) < 0 ||
+        add_operation(ui, "setActive", 2, HOST_SET_ACTIVE) < 0 ||
+        add_operation(ui, "loadStyles", 1, HOST_LOAD_STYLES) < 0 ||
+        add_operation(ui, "loadFontAtlas", 1, HOST_LOAD_FONT_ATLAS) < 0 ||
+        add_operation(ui, "measureText", 2, HOST_MEASURE_TEXT) < 0 ||
+        add_operation(ui, "freeTexture", 1, HOST_FREE_TEXTURE) < 0 ||
+        add_operation(ui, "uploadImgEntry", 1, HOST_UPLOAD_IMG_ENTRY) < 0 ||
         JS_SetPropertyStr(context, ui, "__host", JS_NewString(context, "ipod-photo")) < 0 ||
         JS_SetPropertyStr(context, ui, "__hostAbi", JS_NewInt32(context, PJS_QJS_HOST_ABI)) < 0 ||
         JS_SetPropertyStr(context, ui, "__root", JS_NewInt32(context, PJS_QJS_ROOT_ID)) < 0 ||
@@ -224,6 +532,14 @@ static int install_host(void)
     }
     /* JS_SetPropertyStr consumes viewport whether it succeeds or fails. */
     if (JS_SetPropertyStr(context, ui, "__viewport", viewport) < 0) {
+        JS_FreeValue(context, ui);
+        return -1;
+    }
+
+    ipod_input_value = JS_NewObject(context);
+    if (JS_IsException(ipod_input_value) ||
+        JS_SetPropertyStr(context, ui, "__ipodInput",
+                          JS_DupValue(context, ipod_input_value)) < 0) {
         JS_FreeValue(context, ui);
         return -1;
     }
@@ -267,6 +583,8 @@ bool qjs_runtime_boot(const PjsGuestPackage *guest)
     context = 0;
     global_value = JS_UNDEFINED;
     frame_function = JS_UNDEFINED;
+    ipod_input_value = JS_UNDEFINED;
+    legacy_frame_abi = false;
     if (guest == 0 || guest->javascript == 0 || guest->javascript_length < 2u ||
         guest->javascript[guest->javascript_length - 1u] != 0u) {
         error_code = PJS_QJS_ERROR_EVAL;
@@ -320,7 +638,8 @@ bool qjs_runtime_boot(const PjsGuestPackage *guest)
     );
     execution_budget_stop();
     if (JS_IsException(result)) {
-        error_code = PJS_QJS_ERROR_EVAL;
+        error_code = execution_timed_out ?
+            PJS_QJS_ERROR_BOOT_BUDGET : PJS_QJS_ERROR_EVAL;
         discard_exception();
         qjs_runtime_shutdown();
         return false;
@@ -333,10 +652,27 @@ bool qjs_runtime_boot(const PjsGuestPackage *guest)
         qjs_runtime_shutdown();
         return false;
     }
+    /* The historical A1099 recovery package used seven device-local words.
+     * Function.length is stable for both that package and the generated
+     * framework wrapper (whose standard input surface is at most five words),
+     * so this compatibility decision needs no app-specific marker. */
+    JSValue frame_length = JS_GetPropertyStr(context, frame_function, "length");
+    if (!JS_IsException(frame_length)) {
+        int32_t arity = 0;
+        if (JS_ToInt32(context, &arity, frame_length) == 0) {
+            legacy_frame_abi = arity >= 7;
+        } else {
+            discard_exception();
+        }
+    } else {
+        discard_exception();
+    }
+    JS_FreeValue(context, frame_length);
     execution_budget_start(PJS_QJS_BOOT_BUDGET_US);
     bool jobs_ok = drain_jobs(PJS_QJS_ERROR_PENDING_JOB);
     execution_budget_stop();
     if (!jobs_ok) {
+        if (execution_timed_out) error_code = PJS_QJS_ERROR_BOOT_BUDGET;
         qjs_runtime_shutdown();
         return false;
     }
@@ -346,19 +682,44 @@ bool qjs_runtime_boot(const PjsGuestPackage *guest)
 bool qjs_runtime_frame(const PjsCoreInput *input)
 {
     if (context == 0 || runtime == 0 || input == 0) return false;
-    JSValue arguments[7] = {
-        JS_NewUint32(context, input->buttons),
-        JS_NewInt32(context, input->wheel_delta),
-        JS_NewUint32(context, input->wheel_position),
-        JS_NewBool(context, input->wheel_touched != 0u),
-        JS_NewBool(context, input->hold != 0u),
-        JS_NewUint32(context, input->battery_mv),
-        JS_NewUint32(context, input->power_flags),
-    };
+    uint32_t buttons = guest_buttons(input);
+    JSValue arguments[7];
+    size_t argument_count;
+
+    if (legacy_frame_abi) {
+        /* Compatibility for the already-qualified disk package. */
+        arguments[0] = JS_NewUint32(context, input->buttons);
+        arguments[1] = JS_NewInt32(context, input->wheel_delta);
+        arguments[2] = JS_NewUint32(context, input->wheel_position);
+        arguments[3] = JS_NewBool(context, input->wheel_touched != 0u);
+        arguments[4] = JS_NewBool(context, input->hold != 0u);
+        arguments[5] = JS_NewUint32(context, input->battery_mv);
+        arguments[6] = JS_NewUint32(context, input->power_flags);
+        argument_count = 7u;
+    } else {
+        /* Standard generated-app ABI.  A1099 has no analog nub or touch
+         * surface, so the centered analog word is the complete input frame;
+         * optional touch arguments are intentionally omitted. */
+        arguments[0] = JS_NewUint32(context, buttons);
+        arguments[1] = JS_NewUint32(context, PJS_FRAME_ANALOG_CENTER);
+        argument_count = 2u;
+    }
 
     execution_budget_start(PJS_QJS_FRAME_BUDGET_US);
-    JSValue result = JS_Call(context, frame_function, global_value, 7, arguments);
-    for (size_t index = 0u; index < 7u; ++index) JS_FreeValue(context, arguments[index]);
+    if (update_ipod_input(input, buttons) < 0) {
+        execution_budget_stop();
+        error_code = PJS_QJS_ERROR_HOST;
+        discard_exception();
+        for (size_t index = 0u; index < argument_count; ++index) {
+            JS_FreeValue(context, arguments[index]);
+        }
+        return false;
+    }
+    JSValue result = JS_Call(context, frame_function, global_value,
+                             (int)argument_count, arguments);
+    for (size_t index = 0u; index < argument_count; ++index) {
+        JS_FreeValue(context, arguments[index]);
+    }
     if (JS_IsException(result)) {
         execution_budget_stop();
         error_code = execution_timed_out ?
@@ -381,6 +742,7 @@ void qjs_runtime_shutdown(void)
 {
     execution_budget_stop();
     if (context != 0) {
+        JS_FreeValue(context, ipod_input_value);
         JS_FreeValue(context, frame_function);
         JS_FreeValue(context, global_value);
         JS_FreeContext(context);
@@ -392,4 +754,6 @@ void qjs_runtime_shutdown(void)
     }
     global_value = JS_UNDEFINED;
     frame_function = JS_UNDEFINED;
+    ipod_input_value = JS_UNDEFINED;
+    legacy_frame_abi = false;
 }

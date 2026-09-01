@@ -1,0 +1,43 @@
+﻿{
+    "schema":  1,
+    "verifiedAt":  "2026-09-01T17:32:44.5035055-04:00",
+    "mount":  "F:\\",
+    "candidate":  {
+                      "file":  "pocketjs-a1099-phase1-standard-app.ipod",
+                      "sha256":  "70d7e50c9edee3919613861d014684548a24bad4e8c782f5d912a76d4d8e94b9"
+                  },
+    "appPackage":  {
+                       "localSha256":  "09985ef7e8291a940c458bbf649176cf96f78afd8c45652d5ce2036b0ae6e04e",
+                       "deviceSha256":  "09985ef7e8291a940c458bbf649176cf96f78afd8c45652d5ce2036b0ae6e04e"
+                   },
+    "handoff":  {
+                    "requestedPath":  "F:\\",
+                    "directory":  "F:\\.rockbox",
+                    "targetExists":  true,
+                    "targetSha256":  "70d7e50c9edee3919613861d014684548a24bad4e8c782f5d912a76d4d8e94b9",
+                    "backupExists":  true,
+                    "backupSha256":  "e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd",
+                    "state":  {
+                                  "version":  2,
+                                  "directory":  "F:\\.rockbox",
+                                  "target":  "rockbox.ipod",
+                                  "backup":  "rockbox.ipod.pocketjs-backup",
+                                  "original":  {
+                                                   "bytes":  1166176,
+                                                   "sha256":  "e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd",
+                                                   "imageBytes":  1166168,
+                                                   "imageSha256":  "44545dcc954b8f7abfdeb158ed5c8242f95cdc763fbc4f1d8e96e2611e355ba1"
+                                               },
+                                  "probe":  {
+                                                "path":  "C:\\Users\\ajrty\\Desktop\\Projects\\pocketjs\\phase1-standard-app-simple\\pocketjs-a1099-phase1-standard-app.ipod",
+                                                "bytes":  876080,
+                                                "sha256":  "70d7e50c9edee3919613861d014684548a24bad4e8c782f5d912a76d4d8e94b9",
+                                                "imageBytes":  876072,
+                                                "imageSha256":  "039c34745c977f6b97b7a5eb38e0b79c095d15a680ece8cb7ce51f0626e3cc1a"
+                                            }
+                              },
+                    "staleStateFiles":  [
+
+                                        ]
+                }
+}

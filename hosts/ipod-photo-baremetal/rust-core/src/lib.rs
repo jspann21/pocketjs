@@ -3,7 +3,9 @@
 
 extern crate alloc;
 
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
@@ -161,6 +163,11 @@ struct Nodes {
     buttons: [i32; 5],
 }
 
+struct BootDiagnosticNodes {
+    panel: i32,
+    label: i32,
+}
+
 struct CoreState {
     ui: Ui,
     nodes: Nodes,
@@ -178,6 +185,7 @@ struct CoreState {
     last_runtime_status: u32,
     last_dropped_ticks: u32,
     last_frame_class: u32,
+    boot_diagnostic: Option<BootDiagnosticNodes>,
     dirty: bool,
 }
 
@@ -217,6 +225,26 @@ fn view(ui: &mut Ui, x: f32, y: f32, width: f32, height: f32, color: u32) -> i32
 
 fn set_color(ui: &mut Ui, node: i32, color: u32) {
     set(ui, node, spec::prop::BG_COLOR, color as f64);
+}
+
+/* HostOps text and property-batch payloads are borrowed only for the duration
+ * of the C call. The core copies text into its retained tree and decodes every
+ * batch record before returning, so QuickJS can release its temporary value as
+ * soon as the operation completes. QuickJS may encode a lone UTF-16 surrogate
+ * as invalid UTF-8, so replacement characters preserve the web/PSP behavior. */
+unsafe fn host_text<'a>(bytes: *const u8, length: usize) -> Cow<'a, str> {
+    if bytes.is_null() || length == 0 {
+        Cow::Borrowed("")
+    } else {
+        String::from_utf8_lossy(slice::from_raw_parts(bytes, length))
+    }
+}
+
+fn host_u64(bytes: &[u8]) -> u64 {
+    u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5], bytes[6], bytes[7],
+    ])
 }
 
 fn build_state() -> CoreState {
@@ -290,8 +318,111 @@ fn build_state() -> CoreState {
         last_runtime_status: u32::MAX,
         last_dropped_ticks: u32::MAX,
         last_frame_class: u32::MAX,
+        boot_diagnostic: None,
         dirty: true,
     }
+}
+
+fn push_fixed_decimal(output: &mut String, value: u32, divisors: &[u32]) {
+    let value = value.min(divisors[0] * 10 - 1);
+    for divisor in divisors {
+        output.push(char::from(b'0' + ((value / divisor) % 10) as u8));
+    }
+}
+
+fn boot_diagnostic_text(
+    source: u32,
+    failure_stage: u32,
+    failure_code: u32,
+    sector_reads: u32,
+) -> String {
+    let mut output = String::with_capacity(20);
+    output.push_str(match source {
+        1 => "DISK",
+        2 => "EMBED",
+        _ => "FAIL",
+    });
+    if failure_stage != 0 {
+        output.push(' ');
+        output.push(match failure_stage {
+            1 => 'S',
+            2 => 'P',
+            3 => 'Q',
+            4 => 'F',
+            5 => 'I',
+            6 => 'E',
+            _ => 'X',
+        });
+        push_fixed_decimal(&mut output, failure_code, &[10, 1]);
+    }
+    output.push_str(" R");
+    push_fixed_decimal(
+        &mut output,
+        sector_reads,
+        &[10_000, 1_000, 100, 10, 1],
+    );
+    output
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_set_boot_diagnostic(
+    source: u32,
+    failure_stage: u32,
+    failure_code: u32,
+    sector_reads: u32,
+) {
+    let Some(state) = (unsafe { STATE.as_mut() }) else {
+        return;
+    };
+    let text = boot_diagnostic_text(source, failure_stage, failure_code, sector_reads);
+    let panel_color = match source {
+        1 => abgr(0, 92, 110, 255),
+        2 if failure_stage == 0 => abgr(96, 38, 125, 255),
+        2 => abgr(142, 75, 0, 255),
+        _ => abgr(150, 20, 38, 255),
+    };
+
+    if let Some(nodes) = state.boot_diagnostic.as_ref() {
+        let panel = nodes.panel;
+        let label = nodes.label;
+        set_color(&mut state.ui, panel, panel_color);
+        state.ui.set_text(label, &text);
+        state.dirty = true;
+        return;
+    }
+
+    /* The ordinary qualification app begins at y=16, leaving this single
+     * fixed strip independent from its layout. It is created after the guest
+     * mount, so it remains above the app without adding another status grid. */
+    let panel = view(&mut state.ui, 86.0, 0.0, 134.0, 14.0, panel_color);
+    set(&mut state.ui, panel, spec::prop::Z_INDEX, 32_760.0);
+    let label = state.ui.create_node(spec::NodeType::Text as u8);
+    if label == 0 {
+        unsafe { panic_code(0x52534e44) } // RSND
+    }
+    set(
+        &mut state.ui,
+        label,
+        spec::prop::POS_TYPE,
+        spec::PosType::Absolute as u8 as f64,
+    );
+    set(&mut state.ui, label, spec::prop::INSET_L, 88.0);
+    set(&mut state.ui, label, spec::prop::INSET_T, 0.0);
+    set(&mut state.ui, label, spec::prop::WIDTH, 130.0);
+    set(&mut state.ui, label, spec::prop::HEIGHT, 14.0);
+    set(
+        &mut state.ui,
+        label,
+        spec::prop::TEXT_COLOR,
+        abgr(255, 255, 255, 255) as f64,
+    );
+    set(&mut state.ui, label, spec::prop::FONT_SLOT, 0.0);
+    set(&mut state.ui, label, spec::prop::LINE_HEIGHT, 12.0);
+    set(&mut state.ui, label, spec::prop::Z_INDEX, 32_761.0);
+    state.ui.set_text(label, &text);
+    state.ui.insert_before(spec::ROOT_ID, label, 0);
+    state.boot_diagnostic = Some(BootDiagnosticNodes { panel, label });
+    state.dirty = true;
 }
 
 #[no_mangle]
@@ -670,6 +801,14 @@ pub extern "C" fn pjs_ui_remove_child(parent: i32, child: i32) {
 }
 
 #[no_mangle]
+pub extern "C" fn pjs_ui_set_style(id: i32, style_id: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.set_style(id, style_id);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn pjs_ui_set_prop(id: i32, prop: u32, value: f64) {
     if prop > u8::MAX as u32 {
         return;
@@ -678,6 +817,185 @@ pub extern "C" fn pjs_ui_set_prop(id: i32, prop: u32, value: f64) {
         state.ui.set_prop(id, prop as u8, value);
         state.dirty = true;
     }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_set_prop_batch(bytes: *const u8, length: usize) {
+    const RECORD_BYTES: usize = 3 * core::mem::size_of::<f64>();
+    if bytes.is_null() || length < RECORD_BYTES {
+        return;
+    }
+    let records = unsafe { slice::from_raw_parts(bytes, length - (length % RECORD_BYTES)) };
+    let Some(state) = (unsafe { STATE.as_mut() }) else { return };
+    for record in records.chunks_exact(RECORD_BYTES) {
+        let id = f64::from_bits(host_u64(&record[0..8])) as i32;
+        let prop = f64::from_bits(host_u64(&record[8..16])) as u32;
+        let value = f64::from_bits(host_u64(&record[16..24]));
+        if prop <= u8::MAX as u32 {
+            state.ui.set_prop(id, prop as u8, value);
+        }
+    }
+    state.dirty = true;
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_set_text(id: i32, text: *const u8, length: usize) {
+    let value = unsafe { host_text(text, length) };
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.set_text(id, &value);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_replace_text(id: i32, text: *const u8, length: usize) {
+    let value = unsafe { host_text(text, length) };
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.replace_text(id, &value);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_upload_texture(
+    bytes: *const u8,
+    length: usize,
+    width: u32,
+    height: u32,
+    pixel_storage: u32,
+) -> i32 {
+    let data = if bytes.is_null() || length == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(bytes, length) }
+    };
+    let Some(state) = (unsafe { STATE.as_mut() }) else { return -1 };
+    state.ui.upload_texture(data, width, height, pixel_storage)
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_upload_img_entry(bytes: *const u8, length: usize) -> i32 {
+    let data = if bytes.is_null() || length == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(bytes, length) }
+    };
+    let Some(state) = (unsafe { STATE.as_mut() }) else { return -1 };
+    state.ui.upload_img_entry(data)
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_free_texture(handle: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.free_texture(handle);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_set_image(id: i32, texture: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.set_image(id, texture);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_set_sprite(
+    id: i32,
+    atlas: i32,
+    frames: u32,
+    columns: u32,
+    step: u32,
+) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.set_sprite(id, atlas, frames, columns, step);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_animate(
+    id: i32,
+    prop: u32,
+    to: f64,
+    duration_ms: u32,
+    easing: u32,
+    delay_ms: u32,
+) -> i32 {
+    if prop > u8::MAX as u32 || easing > u8::MAX as u32 {
+        return -1;
+    }
+    let Some(state) = (unsafe { STATE.as_mut() }) else { return -1 };
+    let animation = state.ui.animate(
+        id,
+        prop as u8,
+        to,
+        duration_ms,
+        easing as u8,
+        delay_ms,
+    );
+    if animation > 0 {
+        state.dirty = true;
+    }
+    animation
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_cancel_anim(animation_id: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.cancel_anim(animation_id);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_set_focus(id: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.set_focus(id);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_set_active(id: i32, active: i32) {
+    if let Some(state) = unsafe { STATE.as_mut() } {
+        state.ui.set_active(id, active != 0);
+        state.dirty = true;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_load_styles(bytes: *const u8, length: usize) -> i32 {
+    let data = if bytes.is_null() || length == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(bytes, length) }
+    };
+    let Some(state) = (unsafe { STATE.as_mut() }) else { return 0 };
+    state.ui.load_styles(data) as i32
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_load_font_atlas(bytes: *const u8, length: usize) -> i32 {
+    let data = if bytes.is_null() || length == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(bytes, length) }
+    };
+    let Some(state) = (unsafe { STATE.as_mut() }) else { return 0 };
+    state.ui.load_font_atlas(data) as i32
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_ui_measure_text(
+    text: *const u8,
+    length: usize,
+    font_slot: u32,
+) -> f32 {
+    let value = unsafe { host_text(text, length) };
+    let Some(state) = (unsafe { STATE.as_ref() }) else { return 0.0 };
+    state.ui.measure_text(&value, font_slot as u8)
 }
 
 #[no_mangle]

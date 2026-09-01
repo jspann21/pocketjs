@@ -51,6 +51,7 @@ def main() -> None:
     parser.add_argument("--readelf", default="readelf")
     parser.add_argument("--require-handoff-signature", action="store_true")
     parser.add_argument("--kernel-symbol", default="kernel_main")
+    parser.add_argument("--max-image-bytes", type=int, default=1024 * 1024)
     parser.add_argument("--nm", default="nm")
     args = parser.parse_args()
 
@@ -60,8 +61,12 @@ def main() -> None:
         raise SystemExit("FAIL: .ipod body differs from the flat image")
     if len(image) < 32:
         raise SystemExit("FAIL: vector table is truncated")
-    if len(image) > 1024 * 1024:
-        raise SystemExit("FAIL: phase-zero probe unexpectedly exceeds 1 MiB")
+    if args.max_image_bytes <= 0:
+        raise SystemExit("FAIL: maximum image size must be positive")
+    if len(image) > args.max_image_bytes:
+        raise SystemExit(
+            f"FAIL: image is {len(image)} bytes; maximum is {args.max_image_bytes}"
+        )
     if len(image) & 3:
         raise SystemExit("FAIL: flat image is not word aligned")
 

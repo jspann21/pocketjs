@@ -1,0 +1,61 @@
+PocketJS A1099 ordinary-app candidate
+
+This folder is self-contained and defaults to the iPod at F:\. INSTALL.ps1
+verifies both files, backs up Rockbox and any existing APP.PKT, installs the
+candidate, and verifies the mounted copies. RESTORE.ps1 restores and verifies
+both backups.
+
+INSTALL
+
+1. Put the iPod in disk mode and confirm it appears as F:\.
+2. Open PowerShell in this folder.
+3. Run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+4. Continue only if the final line says INSTALL COMPLETE.
+5. Safely eject F:\ and boot the iPod.
+
+DEVICE CHECK
+
+The screen should be plain and labelled. At first it should say:
+
+   APP: OK
+   SELECT: WAIT
+   WHEEL: WAIT
+
+Press the center button once. SELECT must change to OK.
+Turn the wheel in either direction. WHEEL must change to OK.
+
+If that exact screen does not appear, stop and take one clear photo. There is
+no color legend and no need to repeat cache, USB, battery, Hold, or performance
+checks already covered by the previous qualified build.
+
+RESTORE
+
+1. Return the iPod to disk mode and reconnect it as F:\.
+2. Run:
+
+   .\RESTORE.ps1
+
+3. Continue only if the final line says RESTORE VERIFIED.
+4. Safely eject and confirm normal Rockbox boot.
+
+If the iPod uses another drive letter, pass it explicitly:
+
+   .\INSTALL.ps1 -Mount "G:\"
+   .\VERIFY.ps1 -Mount "G:\"
+   .\RESTORE.ps1 -Mount "G:\"
+
+WHAT TO RETURN
+
+Return exactly these three files from this folder:
+
+   RESULTS.txt
+   INSTALL-STATUS.json
+   RESTORE-STATUS.json
+
+Also return one clear photo only if the labelled screen did not appear or any
+line was unreadable. Stop on a hash mismatch, missing backup, or ambiguous
+transaction state; do not manually delete the backup or transaction files.

@@ -22,11 +22,14 @@ typedef struct {
 typedef struct {
     bool alive;
     int32_t parent;
-    double properties[128];
+    int32_t texture;
+    double properties[160];
 } MockNode;
 
-static MockNode nodes[16];
+static MockNode nodes[64];
 static int32_t next_node = 2;
+static int texture_uploads;
+static int animations_started;
 
 static uint32_t read_u32(const uint8_t *bytes)
 {
@@ -149,7 +152,7 @@ void pjs_ui_destroy_node(int32_t id)
 void pjs_ui_insert_before(int32_t parent, int32_t child, int32_t anchor)
 {
     (void)anchor;
-    assert(parent == 1);
+    assert(parent == 1 || (parent >= 2 && parent < next_node));
     assert(child >= 2 && child < next_node);
     nodes[child].parent = parent;
 }
@@ -162,11 +165,136 @@ void pjs_ui_remove_child(int32_t parent, int32_t child)
     }
 }
 
+void pjs_ui_set_style(int32_t id, int32_t style_id)
+{
+    (void)id;
+    (void)style_id;
+}
+
 void pjs_ui_set_prop(int32_t id, uint32_t prop, double value)
 {
     assert(id >= 2 && id < next_node);
-    assert(prop < 128u);
+    assert(prop < 160u);
     nodes[id].properties[prop] = value;
+}
+
+void pjs_ui_set_prop_batch(const uint8_t *bytes, size_t length)
+{
+    assert(bytes != NULL);
+    assert(length % (3u * sizeof(double)) == 0u);
+    for (size_t offset = 0; offset < length; offset += 3u * sizeof(double)) {
+        double record[3];
+        memcpy(record, bytes + offset, sizeof(record));
+        int32_t id = (int32_t)record[0];
+        uint32_t prop = (uint32_t)record[1];
+        assert(id >= 2 && id < next_node);
+        assert(prop < 160u);
+        nodes[id].properties[prop] = record[2];
+    }
+}
+
+void pjs_ui_set_text(int32_t id, const uint8_t *text, size_t length)
+{
+    (void)id;
+    (void)text;
+    (void)length;
+}
+
+void pjs_ui_replace_text(int32_t id, const uint8_t *text, size_t length)
+{
+    (void)id;
+    (void)text;
+    (void)length;
+}
+
+int32_t pjs_ui_upload_texture(const uint8_t *bytes, size_t length,
+                              uint32_t width, uint32_t height,
+                              uint32_t pixel_storage)
+{
+    assert(bytes != NULL);
+    assert(length == 8u * 8u * 4u);
+    assert(width == 8u && height == 8u && pixel_storage == 3u);
+    ++texture_uploads;
+    return 7;
+}
+
+int32_t pjs_ui_upload_img_entry(const uint8_t *bytes, size_t length)
+{
+    (void)bytes;
+    (void)length;
+    return -1;
+}
+
+void pjs_ui_free_texture(int32_t handle)
+{
+    (void)handle;
+}
+
+void pjs_ui_set_image(int32_t id, int32_t texture)
+{
+    assert(id >= 2 && id < next_node);
+    nodes[id].texture = texture;
+}
+
+void pjs_ui_set_sprite(int32_t id, int32_t atlas, uint32_t frames,
+                       uint32_t columns, uint32_t step)
+{
+    (void)id;
+    (void)atlas;
+    (void)frames;
+    (void)columns;
+    (void)step;
+}
+
+int32_t pjs_ui_animate(int32_t id, uint32_t prop, double to,
+                       uint32_t duration_ms, uint32_t easing,
+                       uint32_t delay_ms)
+{
+    assert(id >= 2 && id < next_node);
+    assert(prop == 128u);
+    assert(to == 0.0 || to == 160.0);
+    assert(duration_ms == 1200u && easing == 3u && delay_ms == 0u);
+    ++animations_started;
+    return animations_started;
+}
+
+void pjs_ui_cancel_anim(int32_t animation_id)
+{
+    (void)animation_id;
+}
+
+void pjs_ui_set_focus(int32_t id)
+{
+    (void)id;
+}
+
+void pjs_ui_set_active(int32_t id, int32_t active)
+{
+    (void)id;
+    (void)active;
+}
+
+int32_t pjs_ui_load_styles(const uint8_t *bytes, size_t length)
+{
+    (void)bytes;
+    (void)length;
+    return 1;
+}
+
+int32_t pjs_ui_load_font_atlas(const uint8_t *bytes, size_t length)
+{
+    (void)bytes;
+    (void)length;
+    return 1;
+}
+
+float pjs_ui_measure_text(const uint8_t *text, size_t length,
+                          uint32_t font_slot)
+{
+    (void)text;
+    (void)length;
+    (void)font_slot;
+    return 0.0f;
 }
 
 static uint32_t abgr(uint8_t red, uint8_t green, uint8_t blue)
@@ -180,8 +308,28 @@ int main(void)
     PjsGuestPackage guest = guest_from_embedded();
     assert(qjs_runtime_boot(&guest));
     assert(qjs_runtime_error_code() == PJS_QJS_ERROR_NONE);
+    if (guest.pak_length != 0u) {
+        assert(next_node > 2);
+        PjsCoreInput input = {0};
+        assert(qjs_runtime_frame(&input));
+        input.buttons = 1u;
+        assert(qjs_runtime_frame(&input));
+        input.buttons = 0u;
+        assert(qjs_runtime_frame(&input));
+        input.wheel_delta = 1;
+        assert(qjs_runtime_frame(&input));
+        qjs_runtime_shutdown();
+        puts("QuickJS generated guest smoke test: OK");
+        return 0;
+    }
     assert(next_node == 5);
-    assert(nodes[2].parent == 1 && nodes[3].parent == 1 && nodes[4].parent == 1);
+    for (int32_t node = 2; node < next_node; ++node) assert(nodes[node].parent == 1);
+    assert(texture_uploads == 0);
+    assert((int)nodes[3].properties[28] == 8);
+    assert((int)nodes[3].properties[25] == 36);
+    assert((int)nodes[3].properties[1] == 10);
+    assert((int)nodes[3].properties[2] == 12);
+    assert(animations_started == 0);
 
     PjsCoreInput input = {
         .wheel_delta = 3,
@@ -201,6 +349,12 @@ int main(void)
     assert(qjs_runtime_frame(&input));
     assert((uint32_t)nodes[3].properties[64] == abgr(255, 78, 90));
     assert(nodes[3].properties[69] == 0.45);
+
+    input.hold = 0;
+    input.buttons = 1;
+    assert(qjs_runtime_frame(&input));
+    assert((uint32_t)nodes[3].properties[64] == abgr(45, 235, 105));
+    assert(animations_started == 0);
 
     qjs_runtime_shutdown();
     puts("QuickJS embedded guest smoke test: OK");

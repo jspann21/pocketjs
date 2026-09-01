@@ -67,6 +67,17 @@ static uint32_t runtime_failure_status(void)
         PJS_RUNTIME_ERROR_BUDGET : PJS_RUNTIME_ERROR;
 }
 
+static uint32_t error_magnitude(int32_t result)
+{
+    return result < 0 ? (uint32_t)(-(int64_t)result) : (uint32_t)result;
+}
+
+static void reset_core_after_failed_guest(void)
+{
+    pjs_core_shutdown();
+    if (pjs_core_init() != 0) panic_code(0x50314331u); /* P1C1 */
+}
+
 static PjsCoreInput core_input(const PjsInputState *input,
                                const PjsPowerTelemetry *power,
                                const PjsScheduler *scheduler,
@@ -135,22 +146,52 @@ void kernel_main_phase1(void)
     uint32_t runtime_status = PJS_RUNTIME_DISABLED;
     bool runtime_active = false;
     bool runtime_from_disk = false;
+    bool disk_runtime_attempted = false;
+    uint32_t boot_source = PJS_BOOT_SOURCE_NONE;
+    uint32_t boot_failure_stage = PJS_BOOT_FAILURE_NONE;
+    uint32_t boot_failure_code = 0u;
     PjsStorageFile disk_package = {0};
     PjsGuestPackage guest = {0};
-    if (pjs_storage_load_guest(&disk_package) == PJS_STORAGE_OK &&
-        pjs_package_open_ipod_photo(disk_package.bytes, disk_package.length, &guest) == 0) {
-        runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
-        runtime_active = qjs_runtime_boot(&guest);
-        runtime_from_disk = runtime_active;
+    int32_t storage_result = pjs_storage_load_guest(&disk_package);
+    if (storage_result == PJS_STORAGE_OK) {
+        int32_t package_result = pjs_package_open_ipod_photo(
+            disk_package.bytes, disk_package.length, &guest);
+        if (package_result == 0) {
+            runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
+            disk_runtime_attempted = true;
+            runtime_active = qjs_runtime_boot(&guest);
+            runtime_from_disk = runtime_active;
+            if (runtime_active) {
+                boot_source = PJS_BOOT_SOURCE_DISK;
+            } else {
+                boot_failure_stage = PJS_BOOT_FAILURE_QUICKJS;
+                boot_failure_code = qjs_runtime_error_code();
+            }
+        } else {
+            boot_failure_stage = PJS_BOOT_FAILURE_PACKAGE;
+            boot_failure_code = error_magnitude(package_result);
+        }
+    } else {
+        boot_failure_stage = PJS_BOOT_FAILURE_STORAGE;
+        boot_failure_code = pjs_storage_last_error();
     }
     if (!runtime_active) {
         pjs_storage_release(&disk_package);
+        if (disk_runtime_attempted) reset_core_after_failed_guest();
         guest = (PjsGuestPackage){0};
-        if (pjs_package_open_ipod_photo(pjs_embedded_package,
-                                        pjs_embedded_package_length,
-                                        &guest) == 0) {
+        int32_t embedded_result = pjs_package_open_ipod_photo(
+            pjs_embedded_package, pjs_embedded_package_length, &guest);
+        boot_source = PJS_BOOT_SOURCE_EMBEDDED;
+        if (embedded_result == 0) {
             runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
             runtime_active = qjs_runtime_boot(&guest);
+            if (!runtime_active) {
+                boot_failure_stage = PJS_BOOT_FAILURE_EMBEDDED_QUICKJS;
+                boot_failure_code = qjs_runtime_error_code();
+            }
+        } else {
+            boot_failure_stage = PJS_BOOT_FAILURE_EMBEDDED_PACKAGE;
+            boot_failure_code = error_magnitude(embedded_result);
         }
     }
     runtime_status = runtime_active ?
@@ -163,11 +204,17 @@ void kernel_main_phase1(void)
     PjsCoreInput initial_input = core_input(&input, &power, &initial_scheduler, 0,
                                             cache_enabled, 0u, runtime_status);
     if (runtime_active && !qjs_runtime_frame(&initial_input)) {
+        boot_failure_stage = PJS_BOOT_FAILURE_FRAME;
+        boot_failure_code = qjs_runtime_error_code();
         qjs_runtime_shutdown();
         runtime_active = false;
         runtime_status = runtime_failure_status();
         initial_input.runtime_status = runtime_status;
+        if (runtime_from_disk) pjs_storage_release(&disk_package);
     }
+    pjs_core_set_boot_diagnostic(boot_source, boot_failure_stage,
+                                 boot_failure_code,
+                                 pjs_storage_sector_read_count());
     if (pjs_core_step(&initial_input) < 0) panic_code(0x50314332u); /* P1C2 */
     uint32_t last_frame_us = render_and_present();
 
@@ -234,10 +281,15 @@ void kernel_main_phase1(void)
                                                   runtime_status);
             for (uint32_t step = 0u; step < steps; ++step) {
                 if (runtime_active && !qjs_runtime_frame(&frame_input)) {
+                    boot_failure_stage = PJS_BOOT_FAILURE_FRAME;
+                    boot_failure_code = qjs_runtime_error_code();
                     qjs_runtime_shutdown();
                     runtime_active = false;
                     runtime_status = runtime_failure_status();
                     frame_input.runtime_status = runtime_status;
+                    pjs_core_set_boot_diagnostic(
+                        boot_source, boot_failure_stage, boot_failure_code,
+                        pjs_storage_sector_read_count());
                 }
                 if (pjs_core_step(&frame_input) < 0) {
                     panic_code(0x50314332u); /* P1C2 */

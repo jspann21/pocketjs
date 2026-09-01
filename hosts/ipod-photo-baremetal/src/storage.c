@@ -16,8 +16,16 @@
 #define ATA_TIMEOUT_US 2000000u
 
 static uint32_t storage_error;
+static uint32_t storage_sector_reads;
+static uint32_t storage_first_failed_lba = UINT32_MAX;
 static const char guest_directory[11] = {'P','O','C','K','E','T','J','S',' ',' ',' '};
 static const char guest_filename[11] = {'A','P','P',' ',' ',' ',' ',' ','P','K','T'};
+
+static bool ata_read_failed(uint32_t lba)
+{
+    if (storage_first_failed_lba == UINT32_MAX) storage_first_failed_lba = lba;
+    return false;
+}
 
 static bool wait_bsy_clear(void)
 {
@@ -67,28 +75,32 @@ static bool ata_read_sector(void *context, uint32_t lba,
                             uint8_t sector[PJS_STORAGE_SECTOR_BYTES])
 {
     (void)context;
-    if (lba >= 0x10000000u || sector == 0) return false;
-    if (!wait_bsy_clear()) return false;
+    if (storage_sector_reads != UINT32_MAX) ++storage_sector_reads;
+    if (lba >= 0x10000000u || sector == 0) return ata_read_failed(lba);
+    if (!wait_bsy_clear()) return ata_read_failed(lba);
 
     PP_ATA_SELECT = (uint8_t)(ATA_SELECT_LBA | ((lba >> 24) & 0x0fu));
     ata_delay_400ns();
-    if (!wait_bsy_clear()) return false;
+    if (!wait_bsy_clear()) return ata_read_failed(lba);
 
     PP_ATA_NSECTOR = 1u;
     PP_ATA_SECTOR = (uint8_t)lba;
     PP_ATA_LCYL = (uint8_t)(lba >> 8);
     PP_ATA_HCYL = (uint8_t)(lba >> 16);
     PP_ATA_COMMAND = ATA_CMD_READ_SECTORS;
-    if (!wait_drq()) return false;
+    if (!wait_drq()) return ata_read_failed(lba);
 
     for (uint32_t word = 0u; word < PJS_STORAGE_SECTOR_BYTES / 2u; ++word) {
         uint16_t value = PP_ATA_DATA;
         sector[word * 2u] = (uint8_t)value;
         sector[word * 2u + 1u] = (uint8_t)(value >> 8);
     }
-    if (!wait_bsy_clear()) return false;
+    if (!wait_bsy_clear()) return ata_read_failed(lba);
     uint8_t status = PP_ATA_STATUS;
-    return (status & (ATA_STATUS_BSY | ATA_STATUS_DF | ATA_STATUS_ERR)) == 0u;
+    if ((status & (ATA_STATUS_BSY | ATA_STATUS_DF | ATA_STATUS_ERR)) != 0u) {
+        return ata_read_failed(lba);
+    }
+    return true;
 }
 
 int pjs_storage_load_guest(PjsStorageFile *file)
@@ -96,6 +108,8 @@ int pjs_storage_load_guest(PjsStorageFile *file)
     if (file == 0) return PJS_STORAGE_ERR_ARGUMENT;
     *file = (PjsStorageFile){0};
     storage_error = 0u;
+    storage_sector_reads = 0u;
+    storage_first_failed_lba = UINT32_MAX;
     ata_prepare();
 
     PjsFat32 fat = {0};
@@ -148,4 +162,14 @@ void pjs_storage_release(PjsStorageFile *file)
 uint32_t pjs_storage_last_error(void)
 {
     return storage_error;
+}
+
+uint32_t pjs_storage_sector_read_count(void)
+{
+    return storage_sector_reads;
+}
+
+uint32_t pjs_storage_first_failed_lba(void)
+{
+    return storage_first_failed_lba;
 }

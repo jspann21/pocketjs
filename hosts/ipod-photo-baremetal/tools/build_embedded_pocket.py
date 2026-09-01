@@ -118,7 +118,7 @@ def build_package(source: bytes) -> bytes:
     return bytes(output)
 
 
-def verify_package(package: bytes, source: bytes) -> None:
+def verify_container(package: bytes) -> bytes:
     if len(package) < HEADER_SIZE + VARIANT_SIZE + 8:
         raise ValueError("package is truncated")
     magic, version, manifest_len, variants = struct.unpack_from("<4I", package, 0)
@@ -127,10 +127,14 @@ def verify_package(package: bytes, source: bytes) -> None:
     if struct.unpack_from("<Q", package, len(package) - 8)[0] != fnv1a64(package[:-8]):
         raise ValueError("package footer hash mismatch")
     variant = align(HEADER_SIZE + manifest_len)
+    if variant + VARIANT_SIZE > len(package) - 8:
+        raise ValueError("package variant is truncated")
     raw_target = package[variant : variant + TARGET_BYTES].split(b"\0", 1)[0].decode("utf-8")
     host_abi, section_count, section_table = struct.unpack_from("<3I", package, variant + 16)
-    if raw_target != TARGET or host_abi != HOST_ABI or section_count != 3:
+    if raw_target != TARGET or host_abi != HOST_ABI or section_count == 0:
         raise ValueError("package variant mismatch")
+    if section_table + section_count * SECTION_SIZE > len(package) - 8:
+        raise ValueError("package section table is truncated")
     payloads: list[bytes] = []
     javascript = None
     for index in range(section_count):
@@ -145,6 +149,13 @@ def verify_package(package: bytes, source: bytes) -> None:
             javascript = payload
     if struct.unpack_from("<Q", package, variant + 32)[0] != fnv1a64(*payloads):
         raise ValueError("variant hash mismatch")
+    if javascript is None or len(javascript) < 2 or javascript[-1] != 0:
+        raise ValueError("package JavaScript is missing or not NUL-terminated")
+    return javascript
+
+
+def verify_package(package: bytes, source: bytes) -> None:
+    javascript = verify_container(package)
     if javascript != source + b"\0":
         raise ValueError("JavaScript section mismatch")
 
@@ -171,14 +182,20 @@ def emit_c(package: bytes, output: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", type=Path, required=True)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--source", type=Path)
+    inputs.add_argument("--input-package", type=Path)
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--c-output", type=Path, required=True)
     args = parser.parse_args()
 
-    source = args.source.read_bytes()
-    package = build_package(source)
-    verify_package(package, source)
+    if args.input_package is not None:
+        package = args.input_package.read_bytes()
+        verify_container(package)
+    else:
+        source = args.source.read_bytes()
+        package = build_package(source)
+        verify_package(package, source)
     args.package.parent.mkdir(parents=True, exist_ok=True)
     args.package.write_bytes(package)
     emit_c(package, args.c_output)

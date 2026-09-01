@@ -1,0 +1,75 @@
+{
+  "artifacts": {
+    "bin": {
+      "bytes": 876360,
+      "path": "pocketjs-a1099-phase1-hostops-hold2.bin",
+      "role": "flat image",
+      "sha256": "f943dc8acb4fea7c03426043c64d9dc3799035b5d4c72d05019631f359c6476e"
+    },
+    "disassembly": {
+      "bytes": 8807821,
+      "path": "pocketjs-a1099-phase1-hostops-hold2.dis",
+      "role": "disassembly",
+      "sha256": "2461c36d73a37e1a82193689930e317d4d0783f171b05e928fc9bad4a539e6cb"
+    },
+    "elf": {
+      "bytes": 1231896,
+      "path": "pocketjs-a1099-phase1-hostops-hold2.elf",
+      "role": "ELF",
+      "sha256": "9d5611ebd93f7f79e359907872ba29d1b7941ae7739ab18754c347302db6735e"
+    },
+    "ipod": {
+      "bytes": 876368,
+      "path": "pocketjs-a1099-phase1-hostops-hold2.ipod",
+      "role": "ipco wrapper",
+      "sha256": "6babe891ac53f09a0a3c71da1e14849713f6bc60136bad73571862e4bdcdb3f7"
+    },
+    "map": {
+      "bytes": 661941,
+      "path": "pocketjs-a1099-phase1-hostops-hold2.map",
+      "role": "link map",
+      "sha256": "e621eee1f3e99b090581aa8345058c27531c6222e3bc2d5677874bfef084b3ca"
+    },
+    "recoveryPackage": {
+      "bytes": 6792,
+      "path": "generated/recovery.pocket",
+      "role": "embedded recovery package",
+      "sha256": "fc5cc221f6c6c1a951d3657eabf832ec5c0b906c703d5b73dfac0a0cfe3ff579"
+    }
+  },
+  "buildReport": {
+    "path": "PHASE1_HOSTOPS_HOLD2_BUILD_REPORT.json",
+    "schema": 1,
+    "sha256": "798943584d5babeb6703d76af3b99cb0f9d8f2d4eedac9e902d1b2ff3292d4da"
+  },
+  "candidate": {
+    "commit": "3c42528fef0fddb82e58b872e088a21035e396bc",
+    "imageName": "pocketjs-a1099-phase1-hostops-hold2",
+    "workflowRun": "local-hostops-hold2"
+  },
+  "hardwareBatch": {
+    "observationSecondsMinimum": 30,
+    "restoreBeforeDisconnecting": true,
+    "resultTemplate": "PHASE1_HOSTOPS_HOLD2_BATCH_RESULT.json",
+    "runNativeControlsBeforeCableTransitions": true
+  },
+  "installation": {
+    "deviceMutation": "mounted FAT32 rockbox.ipod only",
+    "installCommand": "tools/handoff.py install",
+    "method": "reversible /rockbox.ipod handoff",
+    "restoreCommand": "tools/handoff.py restore",
+    "singleStagingCycle": true
+  },
+  "kind": "phase1-qualification-batch",
+  "schema": 1,
+  "staticChecks": {
+    "artifactSetComplete": true,
+    "buildReportAligned": true,
+    "handoffMarker": true,
+    "imageWordAligned": true,
+    "ipcoChecksum": true,
+    "ipcoModel": true,
+    "wrapperContainsFlatImage": true
+  },
+  "target": "ipod-photo-a1099"
+}

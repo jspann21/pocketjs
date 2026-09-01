@@ -116,7 +116,6 @@ void power_telemetry_init(void)
 void power_telemetry_sample(PjsPowerTelemetry *telemetry)
 {
     if (telemetry == 0) return;
-    PP_GPO32_INPUT_VAL = 0u;
     uint8_t flags = power_decode_source_flags(PP_GPIOC_INPUT_VAL, PP_GPIOD_INPUT_VAL,
                                               PP_GPO32_INPUT_VAL);
     uint8_t adc[2] = {0u, 0u};

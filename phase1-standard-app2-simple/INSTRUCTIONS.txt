@@ -1,0 +1,60 @@
+PocketJS A1099 ordinary-app candidate 2
+
+This replaces phase1-standard-app-simple. It uses a smaller generated bundle,
+a bounded 30-second startup allowance, and embeds the exact same ordinary app
+as a fallback. The old diagnostic app is not embedded in this image.
+
+INSTALL
+
+1. Put the iPod in disk mode and confirm it appears as F:\.
+2. Open PowerShell in this folder.
+3. Run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+4. Continue only if the final line says INSTALL COMPLETE.
+5. Safely eject F:\ and boot the iPod. Allow up to 30 seconds for the first
+   screen on this candidate.
+
+DEVICE CHECK
+
+The screen should be plain and labelled:
+
+   APP: OK
+   SELECT: WAIT
+   WHEEL: WAIT
+
+Press the center button once. SELECT must change to OK.
+Turn the wheel in either direction. WHEEL must change to OK.
+
+If the labelled screen does not appear after 30 seconds, stop and take one
+clear photo of whatever is visible. No other diagnostic checks are needed.
+
+RESTORE
+
+1. Return the iPod to disk mode and reconnect it as F:\.
+2. Run:
+
+   .\RESTORE.ps1
+
+3. Continue only if the final line says RESTORE VERIFIED.
+4. Safely eject and confirm normal Rockbox boot.
+
+For another drive letter, pass it explicitly:
+
+   .\INSTALL.ps1 -Mount "G:\"
+   .\VERIFY.ps1 -Mount "G:\"
+   .\RESTORE.ps1 -Mount "G:\"
+
+WHAT TO RETURN
+
+Return exactly:
+
+   RESULTS.txt
+   INSTALL-STATUS.json
+   RESTORE-STATUS.json
+
+Also return one clear photo only if the labelled screen did not appear or was
+wrong. Stop on a hash mismatch or backup/state error; do not manually delete
+the backup or transaction files.

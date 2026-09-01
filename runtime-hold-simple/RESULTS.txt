@@ -1,0 +1,11 @@
+first screen appeared after: ___ seconds
+runtime chip initially: cyan / magenta / orange / red / other
+runtime chip after 5 Hold on/off transitions: cyan / orange / red / other
+thin red Hold strip appeared/disappeared promptly: yes / no
+performance chip during Hold: green / yellow / orange / red
+guest Hold reaction: yes / no
+wheel/buttons after Hold transitions: prompt / delayed / not working
+heartbeat after Hold transitions: normal / slow / stopped
+partial-update artifacts: none / describe
+Menu+Play reset: yes / no
+anything unexpected:

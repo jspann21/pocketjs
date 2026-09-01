@@ -1,0 +1,43 @@
+PocketJS A1099 Phase 1 HostOps/regression build
+
+The scripts default to the iPod mounted at F:\. They verify every supplied
+file before changing the volume. INSTALL.ps1 creates a verified backup of
+Rockbox and also preserves any existing F:\POCKETJS\APP.PKT. RESTORE.ps1 puts
+both back exactly as they were.
+
+INSTALL
+
+1. Put the iPod in disk mode and confirm it appears as F:\.
+2. Open PowerShell in this folder.
+3. Run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+4. The final line must say INSTALL COMPLETE. It also creates
+   INSTALL-STATUS.json in this folder.
+5. Safely eject F:\ and boot the iPod.
+
+DEVICE CHECK
+
+Follow RESULTS.txt. Do not install another image during this test.
+
+RESTORE
+
+1. Use Select+Play to enter disk mode and reconnect the iPod as F:\.
+2. Run:
+
+   .\RESTORE.ps1
+
+3. The final line must say RESTORE VERIFIED. It creates RESTORE-STATUS.json.
+4. Safely eject and confirm normal Rockbox boot.
+
+If the iPod mounts under a different letter, pass it explicitly, for example:
+
+   .\INSTALL.ps1 -Mount "G:\"
+   .\VERIFY.ps1 -Mount "G:\"
+   .\RESTORE.ps1 -Mount "G:\"
+
+STOP if a script reports a hash mismatch, missing backup, or ambiguous state.
+Do not manually delete rockbox.ipod.pocketjs-backup or either transaction JSON.
+

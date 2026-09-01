@@ -114,3 +114,90 @@ PocketJS retained damage rendering, compact LCD updates, timer accounting, and
 input responsiveness on the physical P98/M9829 type-0 panel. The next isolated
 gate enables PCF50605 battery ADC and LTC4066 charging-state telemetry without
 changing the qualified cache, scheduler, renderer, LCD, or input paths.
+
+## Expanded HostOps candidate — Hold edge exceeds initial JS budget
+
+```text
+candidate wrapper SHA-256:
+498e49fcb60adcfde8bad52b6583dfe5c7050241923a41167bfbcde9f8c823dc
+
+APP.PKT SHA-256:
+4e072db93b1bf4b31c9b2a6ced764c78ed14a16ca842406ad7b1d11bea14ab15
+
+first screen: about 1 second
+runtime chip initially: cyan
+embedded guest lane/pulse/wheel marker: passed
+wheel touch and Select/Menu/Play guest states: passed
+native input and heartbeat: prompt/normal
+battery/cache/USB indicators: plausible/green/blue
+changed-frame status: orange in the worst case
+partial-update artifacts: none
+runtime chip after toggling Hold: orange
+Menu+Play reset: passed
+Rockbox restore SHA-256:
+e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd
+```
+
+The expanded bridge and disk guest remained functional, but the physical
+PP5020 exceeded the initial 100 ms QuickJS frame watchdog while processing the
+Hold mutation edge. The follow-up candidate retains a finite watchdog at 250 ms
+and adds visible texture, property-batch, and core-animation probes so the next
+device cycle qualifies more of the bridge while retesting Hold.
+
+## Expanded HostOps + Hold watchdog candidate — passed
+
+```text
+candidate wrapper SHA-256:
+6babe891ac53f09a0a3c71da1e14849713f6bc60136bad73571862e4bdcdb3f7
+
+APP.PKT SHA-256:
+fc5cc221f6c6c1a951d3657eabf832ec5c0b906c703d5b73dfac0a0cfe3ff579
+
+first screen: about 1 second
+runtime chip initially: cyan
+cyan/magenta checker texture and alternating blocks: passed
+yellow animation runner and rail: visible
+Select animation and reverse/restart: prompt start, slow/choppy motion
+guest pulse/lane/wheel/touch/buttons/Hold states: passed
+runtime chip after five Hold transitions: cyan
+native Hold strip, controls and heartbeat: prompt/prompt/normal
+battery/cache/USB indicators: plausible/green/blue
+changed-frame status: orange only on a Hold edge
+partial-update artifacts: none
+Menu+Play reset: passed
+Rockbox restore SHA-256:
+e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd
+backup/state/stale transaction files after restore: absent
+```
+
+This candidate passes the Hold regression that failed at 100 ms and physically
+qualifies the texture, image, typed-array property-batch, animation,
+cancellation/restart, focus, and active bridge paths exercised by the guest.
+The slow/choppy animated traversal is retained as performance evidence: it did
+not coincide with a runtime fault, input delay, stopped heartbeat, reported
+dropped tick, partial-update artifact, or failed restoration.
+
+## Ordinary generated application candidate — passed
+
+```text
+candidate wrapper SHA-256:
+3695faaab21e2632a20dcb1305b92fb0a7f4007cc4106f185bd509e5560395d4
+
+APP.PKT and embedded fallback SHA-256:
+d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b
+
+labelled ordinary-app screen within 30 seconds: passed
+APP status: OK
+center Select changed WAIT to OK: passed
+wheel changed WAIT to OK: passed
+readability and visible artifacts: passed / none observed
+Rockbox restore SHA-256:
+e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd
+backup/state/stale transaction files after restore: absent
+```
+
+This closes the Campaign 1 ordinary framework-application gate. The device
+executed the canonical target's generated Solid bundle and baked asset pack
+through the standard frame/input contract, including reactive text updates.
+Because the disk and embedded packages were identical, this result does not
+claim the separate large multi-cluster FAT32 source-selection gate.

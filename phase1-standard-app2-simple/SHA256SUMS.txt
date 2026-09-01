@@ -1,0 +1,2 @@
+3695faaab21e2632a20dcb1305b92fb0a7f4007cc4106f185bd509e5560395d4  pocketjs-a1099-phase1-standard-app2.ipod
+d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b  APP.PKT

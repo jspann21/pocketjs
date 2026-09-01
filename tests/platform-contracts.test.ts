@@ -214,6 +214,7 @@ describe("platform registry", () => {
       "macos-app",
       "linux-app",
       "web-app",
+      "ipod-photo",
     ]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
@@ -332,6 +333,18 @@ describe("platform registry", () => {
         "text.glyphs.baked",
       ],
       roleCapabilities: { systemUI: ["ui.compositor-surfaces"] },
+    });
+    expect(POCKET_TARGETS["ipod-photo"]).toEqual({
+      hostAbi: 1,
+      platform: "ipod-photo",
+      form: "takeover",
+      display: {
+        physicalViewport: [220, 176],
+        logicalViewports: [[220, 176]],
+        presentations: ["native"],
+        rasterDensity: 1,
+      },
+      capabilities: ["input.buttons", "text.glyphs.baked"],
     });
   });
 
@@ -535,6 +548,7 @@ describe("semantic resolution", () => {
       "meizu-m8-demo": [false, false, false, false], // admitted only by the private meizu-m8-dev profile
       nsengine: [false, true, false, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
       "ipod-nano": [false, false, false, false], // admitted by the package-shaped macos-embedded target
+      "ipod-photo-demo": [false, false, false, false], // admitted by the canonical 220x176 ipod-photo target
       launcher: [true, true, false, true], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
       library: [true, true, false, true],
       motions: [true, true, false, true],

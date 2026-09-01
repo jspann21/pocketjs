@@ -488,7 +488,10 @@ const result = await Bun.build({
       ? { document: "globalThis.__pocketDocument" }
       : {}),
   },
-  minify: false,
+  // The 80 MHz PP5020 evaluates source directly in QuickJS. Keep the normal
+  // readable bundles elsewhere, but remove parser work and package I/O from
+  // this constrained target's production artifact.
+  minify: buildPlan?.target.id === "ipod-photo",
   sourcemap: "none",
   plugins: [jsxPlugin(framework, {
     entry,

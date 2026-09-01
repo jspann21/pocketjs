@@ -39,6 +39,14 @@ RECOVERY_POCKET := $(BUILD)/generated/recovery.pocket
 EMBEDDED_PACKAGE_C := $(BUILD)/generated/embedded_package.c
 EMBEDDED_PACKAGE_O := $(BUILD)/generated/embedded_package.o
 EMBEDDED_PACKAGE_STAMP := $(BUILD)/generated/.package-ready
+EMBEDDED_POCKET_INPUT ?=
+ifneq ($(strip $(EMBEDDED_POCKET_INPUT)),)
+EMBEDDED_PACKAGE_DEP := $(EMBEDDED_POCKET_INPUT)
+EMBEDDED_PACKAGE_ARGS := --input-package $(EMBEDDED_POCKET_INPUT)
+else
+EMBEDDED_PACKAGE_DEP := $(RECOVERY_SOURCE)
+EMBEDDED_PACKAGE_ARGS := --source $(RECOVERY_SOURCE)
+endif
 
 QUICKJS_SRC ?=
 QUICKJS_VERSION ?= 2026-06-04
@@ -111,10 +119,10 @@ $(BUILD)/boot/crt0-phase1.o: boot/crt0-phase1.S
 	@mkdir -p $(dir $@)
 	$(CLANG) $(ASFLAGS) -c $< -o $@
 
-$(EMBEDDED_PACKAGE_STAMP): $(RECOVERY_SOURCE) tools/build_embedded_pocket.py
+$(EMBEDDED_PACKAGE_STAMP): $(EMBEDDED_PACKAGE_DEP) tools/build_embedded_pocket.py
 	@mkdir -p $(dir $@)
 	$(PYTHON) tools/build_embedded_pocket.py \
-	  --source $(RECOVERY_SOURCE) \
+	  $(EMBEDDED_PACKAGE_ARGS) \
 	  --package $(RECOVERY_POCKET) \
 	  --c-output $(EMBEDDED_PACKAGE_C)
 	@touch $@
@@ -209,7 +217,8 @@ inspect: $(ELF) $(BIN) $(IPOD) $(MAP)
 	$(PYTHON) tools/inspect_image.py $(BIN)
 	$(PYTHON) tools/inspect_image.py $(IPOD)
 	$(PYTHON) tools/verify_build.py --elf $(ELF) --bin $(BIN) --ipod $(IPOD) \
-	  --map $(MAP) --require-handoff-signature --kernel-symbol kernel_main_phase1
+	  --map $(MAP) --require-handoff-signature --kernel-symbol kernel_main_phase1 \
+	  --max-image-bytes 2097152
 	$(PYTHON) tools/verify_phase1.py --elf $(ELF) --bin $(BIN) --ipod $(IPOD) \
 	  --backend $(VERIFY_BACKEND) $(VERIFY_POWER) $(VERIFY_QUICKJS)
 
