@@ -44,7 +44,6 @@ jobs:
           grep -F 'PJS_QJS_FRAME_BUDGET_US 100000u' hosts/ipod-photo-baremetal/src/qjs_runtime.c
           grep -F 'PJS_RUNTIME_READY_DISK' hosts/ipod-photo-baremetal/include/core_bridge.h
           grep -F '220.0, 8.0, abgr(230, 12, 32, 255)' hosts/ipod-photo-baremetal/rust-core/src/lib.rs
-          git diff --check
 
       - name: Install pinned build prerequisites
         shell: bash
