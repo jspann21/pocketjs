@@ -1,0 +1,13 @@
+PocketJS A1099 disk-source gate 2 result
+
+ordinary app appeared within 30 seconds: yes
+complete top source-strip text: DISK R00376
+source strip began with DISK: yes
+center button and wheel still worked: yes
+anything unexpected: none
+
+After testing, RESTORE.ps1 said RESTORE VERIFIED: yes
+Normal Rockbox boot after restore: yes
+
+Return this file plus INSTALL-STATUS.json and RESTORE-STATUS.json.
+Send one clear photo only if the source strip or ordinary app was wrong.

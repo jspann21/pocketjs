@@ -65,6 +65,25 @@ gate. The installation record verified both staged hashes, and restoration
 verified the original Rockbox hash with no backup, transaction, or stale-state
 files remaining.
 
+## Ordinary app disk-source qualification
+
+- File: `pocketjs-a1099-phase1-storage-source2.ipod`
+- SHA-256: `25e7f8767c1b5118eadd2bcb148f6b03d6a5a2842bed46d8beb1774a1c771577`
+- Disk APP.PKT SHA-256: `d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b`
+- Embedded fallback SHA-256: `d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b`
+- On-device boot-source evidence: `DISK R00376`
+- Original Rockbox restored SHA-256: `e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd`
+
+This exact candidate closes the source-selection caveat above. The ordinary
+app rendered and remained responsive, while the native source strip reported
+`DISK` and 376 sector reads. This physically qualifies the large,
+multi-cluster FAT32 load of the 174,792-byte package rather than relying on the
+byte-identical embedded fallback. The first source-strip candidate drew its
+panel but clipped the label above the screen; this candidate uses the 15-pixel
+slot-0 glyph cell fully on-screen. Installation and restoration records verify
+the candidate, disk package, original Rockbox hash, and absence of remaining
+handoff state.
+
 ## Qualified scope
 
 - Rockbox bootloader handoff and standalone ARMv4T startup
@@ -77,6 +96,7 @@ files remaining.
 - QuickJS runtime and generic PocketJS HostOps bridge
 - Target-admitted `ipod-photo` `.pocket` package execution
 - Read-only PIO ATA + FAT32 loading of `/POCKETJS/APP.PKT`
+- Multi-cluster ordinary-app disk loading with explicit source/read evidence
 - Invalid/corrupt disk package rejection with embedded recovery `.pocket` fallback
 - Runtime Hold transition with no QuickJS fault or scheduler drop
 

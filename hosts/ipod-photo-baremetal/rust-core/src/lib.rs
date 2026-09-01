@@ -394,7 +394,7 @@ pub extern "C" fn pjs_core_set_boot_diagnostic(
     /* The ordinary qualification app begins at y=16, leaving this single
      * fixed strip independent from its layout. It is created after the guest
      * mount, so it remains above the app without adding another status grid. */
-    let panel = view(&mut state.ui, 86.0, 0.0, 134.0, 14.0, panel_color);
+    let panel = view(&mut state.ui, 86.0, 0.0, 134.0, 16.0, panel_color);
     set(&mut state.ui, panel, spec::prop::Z_INDEX, 32_760.0);
     let label = state.ui.create_node(spec::NodeType::Text as u8);
     if label == 0 {
@@ -407,9 +407,12 @@ pub extern "C" fn pjs_core_set_boot_diagnostic(
         spec::PosType::Absolute as u8 as f64,
     );
     set(&mut state.ui, label, spec::prop::INSET_L, 88.0);
-    set(&mut state.ui, label, spec::prop::INSET_T, 0.0);
+    /* Slot 0 uses a 15 px-tall glyph cell. Keep its top on-screen: a 12 px
+     * line box at y=0 centers the cell at -1.5 px, and the raster backend
+     * intentionally drops glyph cells whose top-left is outside the screen. */
+    set(&mut state.ui, label, spec::prop::INSET_T, 1.0);
     set(&mut state.ui, label, spec::prop::WIDTH, 130.0);
-    set(&mut state.ui, label, spec::prop::HEIGHT, 14.0);
+    set(&mut state.ui, label, spec::prop::HEIGHT, 15.0);
     set(
         &mut state.ui,
         label,
@@ -417,7 +420,7 @@ pub extern "C" fn pjs_core_set_boot_diagnostic(
         abgr(255, 255, 255, 255) as f64,
     );
     set(&mut state.ui, label, spec::prop::FONT_SLOT, 0.0);
-    set(&mut state.ui, label, spec::prop::LINE_HEIGHT, 12.0);
+    set(&mut state.ui, label, spec::prop::LINE_HEIGHT, 15.0);
     set(&mut state.ui, label, spec::prop::Z_INDEX, 32_761.0);
     state.ui.set_text(label, &text);
     state.ui.insert_before(spec::ROOT_ID, label, 0);

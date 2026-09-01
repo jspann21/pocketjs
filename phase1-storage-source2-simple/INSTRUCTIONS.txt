@@ -1,0 +1,65 @@
+PocketJS A1099 disk-source gate 2
+
+This replaces phase1-storage-source-simple, whose blue strip appeared but put
+its text one pixel above the screen. This candidate keeps the same ordinary
+PocketJS app and moves the source text fully on-screen:
+
+   DISK R#####
+
+The digits are a read count and can vary. There are no rectangle or color
+checks in this test.
+
+INSTALL
+
+1. Put the iPod in disk mode and confirm it appears as F:\.
+2. Open PowerShell in this folder.
+3. Run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+4. Continue only if the final line says INSTALL COMPLETE.
+5. Safely eject F:\ and boot the iPod. Allow up to 30 seconds.
+
+DEVICE CHECK
+
+The ordinary app should appear with:
+
+   APP: OK
+   SELECT: WAIT
+   WHEEL: WAIT
+
+At the top, the small source strip must begin with DISK. Ignore the R digits.
+Press the center button once and turn the wheel once to confirm the app still
+responds.
+
+If DISK is absent, copy the complete source-strip text into RESULTS.txt. Take
+one clear photo only if the strip or ordinary app is missing or unreadable.
+
+RESTORE
+
+1. Return the iPod to disk mode and reconnect it as F:\.
+2. Run:
+
+   .\RESTORE.ps1
+
+3. Continue only if the final line says RESTORE VERIFIED.
+4. Safely eject and confirm normal Rockbox boot.
+
+For another drive letter, pass it explicitly:
+
+   .\INSTALL.ps1 -Mount "G:\"
+   .\VERIFY.ps1 -Mount "G:\"
+   .\RESTORE.ps1 -Mount "G:\"
+
+WHAT TO RETURN
+
+Return exactly:
+
+   RESULTS.txt
+   INSTALL-STATUS.json
+   RESTORE-STATUS.json
+
+Also return one clear photo only if the source strip or ordinary app was
+missing, wrong, or unreadable. Stop on a hash mismatch or backup/state error;
+do not manually delete backup or transaction files.

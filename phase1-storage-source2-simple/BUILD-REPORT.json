@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "baseCommit": "0c48bf4",
+  "change": "source strip text y=1, 15px line box",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-storage-source2.ipod",
+    "bytes": 1048252,
+    "sha256": "25e7f8767c1b5118eadd2bcb148f6b03d6a5a2842bed46d8beb1774a1c771577"
+  },
+  "appPackage": {
+    "file": "APP.PKT",
+    "bytes": 174792,
+    "sha256": "d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b",
+    "embeddedFallbackSha256": "d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b"
+  },
+  "checks": [
+    "TypeScript",
+    "target package build",
+    "ARM firmware build",
+    "static image verification",
+    "Phase 1 image verification",
+    "host QuickJS generated guest",
+    "fragmented multi-cluster FAT32 loader"
+  ]
+}

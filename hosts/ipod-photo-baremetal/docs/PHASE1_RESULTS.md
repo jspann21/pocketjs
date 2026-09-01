@@ -201,3 +201,26 @@ executed the canonical target's generated Solid bundle and baked asset pack
 through the standard frame/input contract, including reactive text updates.
 Because the disk and embedded packages were identical, this result does not
 claim the separate large multi-cluster FAT32 source-selection gate.
+
+## Ordinary generated app disk-source candidate — passed
+
+```text
+candidate wrapper SHA-256:
+25e7f8767c1b5118eadd2bcb148f6b03d6a5a2842bed46d8beb1774a1c771577
+
+APP.PKT and embedded fallback SHA-256:
+d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b
+
+ordinary app within 30 seconds: passed
+source strip: DISK R00376
+center Select and wheel response: passed
+unexpected behavior: none
+Rockbox restore SHA-256:
+e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd
+backup/state/stale transaction files after restore: absent
+```
+
+The explicit `DISK` source and 376-sector count qualify physical FAT32 loading
+of the 174,792-byte ordinary package. This closes the source ambiguity in the
+previous byte-identical disk/embedded candidate without restoring the crowded
+diagnostic screen.
