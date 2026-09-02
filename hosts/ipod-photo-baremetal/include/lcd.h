@@ -17,4 +17,12 @@ bool lcd_ready(void);
 uint8_t lcd_panel_type(void);
 uint16_t lcd_rgb565_swapped(uint8_t r, uint8_t g, uint8_t b);
 
+typedef struct {
+    uint32_t source;
+    uint32_t clcd_source;
+} PjsLcdClockState;
+
+void lcd_clock_snapshot(PjsLcdClockState *state);
+bool lcd_clock_state_matches(const PjsLcdClockState *state);
+
 #endif

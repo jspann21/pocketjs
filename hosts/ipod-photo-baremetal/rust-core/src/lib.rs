@@ -35,6 +35,11 @@ const POWER_ADC_VALID: u32 = 1 << 3;
 const POWER_I2C_FAULT: u32 = 1 << 4;
 const POWER_TELEMETRY_DISABLED: u32 = 1 << 5;
 const POWER_ADC_RANGE_FAULT: u32 = 1 << 6;
+const POWER_BATTERY_LOW: u32 = 1 << 8;
+const POWER_BATTERY_CRITICAL: u32 = 1 << 9;
+
+const PHOTO_BATTERY_CURVE: [u32; 11] =
+    [3450, 3660, 3700, 3730, 3770, 3820, 3870, 3920, 4040, 4100, 4170];
 
 extern "C" {
     fn pjs_heap_alloc(size: usize, alignment: usize) -> *mut u8;
@@ -225,6 +230,26 @@ fn view(ui: &mut Ui, x: f32, y: f32, width: f32, height: f32, color: u32) -> i32
 
 fn set_color(ui: &mut Ui, node: i32, color: u32) {
     set(ui, node, spec::prop::BG_COLOR, color as f64);
+}
+
+fn photo_battery_percent(mv: u32) -> u32 {
+    if mv <= PHOTO_BATTERY_CURVE[0] {
+        return 0;
+    }
+    if mv >= PHOTO_BATTERY_CURVE[10] {
+        return 100;
+    }
+    for index in 1..PHOTO_BATTERY_CURVE.len() {
+        let high = PHOTO_BATTERY_CURVE[index];
+        if mv > high {
+            continue;
+        }
+        let low = PHOTO_BATTERY_CURVE[index - 1];
+        let span = high - low;
+        let offset = mv - low;
+        return ((index as u32 - 1) * 10) + (offset * 10 + span / 2) / span;
+    }
+    100
 }
 
 /* HostOps text and property-batch payloads are borrowed only for the duration
@@ -555,6 +580,17 @@ pub extern "C" fn pjs_core_set_kernel_diagnostic(mode: u32, error: u32) {
         5 => (String::from("SHDN READY"), abgr(16, 112, 72, 255)),
         6 => (String::from("DISK WAIT"), abgr(142, 75, 0, 255)),
         7 => (String::from("DISK GO"), abgr(96, 42, 150, 255)),
+        10 => (String::from("WAKE USB"), abgr(16, 112, 72, 255)),
+        11 => (String::from("WAKE FIRE"), abgr(16, 112, 72, 255)),
+        13 => (String::from("SUSPEND"), abgr(142, 75, 0, 255)),
+        14 => (String::from("RESUME"), abgr(16, 112, 72, 255)),
+        15 => (String::from("CHG ONLY"), abgr(16, 112, 72, 255)),
+        16 => (String::from("BAT LOW"), abgr(142, 75, 0, 255)),
+        17 => (String::from("BAT CRIT"), abgr(150, 20, 38, 255)),
+        18 => (String::from("DISK FLUSH"), abgr(142, 75, 0, 255)),
+        19 => (String::from("BAT OFF"), abgr(150, 20, 38, 255)),
+        20 => (String::from("DISK OFF"), abgr(96, 42, 150, 255)),
+        21 => (String::from("SUSP EXT"), abgr(142, 75, 0, 255)),
         _ => {
             let mut output = String::from("KERN E");
             push_fixed_decimal(&mut output, error, &[10, 1]);
@@ -659,14 +695,17 @@ pub extern "C" fn pjs_core_step(input: *const PjsCoreInput) -> i32 {
             set_color(&mut state.ui, state.nodes.battery_fill, abgr(145, 100, 255, 255));
         } else if telemetry_valid {
             let mv = input.battery_mv.clamp(3200, 4200);
-            let battery_width = 1.0 + (mv - 3200) as f32 * 96.0 / 1000.0;
+            let percent = photo_battery_percent(mv);
+            let battery_width = 1.0 + percent as f32 * 96.0 / 100.0;
             set(&mut state.ui, state.nodes.battery_fill, spec::prop::WIDTH, battery_width as f64);
             set_color(
                 &mut state.ui,
                 state.nodes.battery_fill,
-                if mv < 3450 {
+                if input.power_flags & POWER_BATTERY_CRITICAL != 0 {
                     abgr(235, 30, 50, 255)
-                } else if mv < 3700 {
+                } else if input.power_flags & POWER_BATTERY_LOW != 0 {
+                    abgr(255, 145, 35, 255)
+                } else if percent < 30 {
                     abgr(255, 205, 30, 255)
                 } else {
                     abgr(35, 225, 92, 255)

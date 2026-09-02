@@ -38,6 +38,18 @@ Required before direct OSOS replacement:
 - an independent firmware installer with bounds checks, aligned writes,
   complete read-back verification, and restore testing.
 
+Campaign 3 is packaged separately as `phase1-power-lifecycle-simple` after
+the passed native-kernel handoff. Its candidate adds the active power boundary:
+bounded PCF50605/I2C recovery, calibrated and debounced battery policy,
+filtered USB/FireWire/charging state, conservative charger control, LCD and
+backlight sleep, ATA flush/standby/rail-off ordering, safe restart/shutdown,
+suspend/resume, and wake-source accounting. Candidate
+`b9d9a4a0a162419adc36dd6474b45aaa772b6dd703f554e8da7edf6514e971b3`
+passed the revised physical procedure and verified restore on 2026-09-02.
+Physical power interruption, measured PMU/charger behavior, and Campaign 4
+audio remain outside this campaign, and direct OSOS installation is not
+authorized.
+
 ## Phase 2 — PocketJS runtime
 
 - bounded allocator with image/stack/framebuffer guards;

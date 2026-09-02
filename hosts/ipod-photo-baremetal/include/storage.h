@@ -22,6 +22,9 @@
 #define PJS_STORAGE_ERR_TOO_MANY -10
 #define PJS_STORAGE_ERR_STATE -11
 #define PJS_STORAGE_ERR_VERIFY -12
+#define PJS_STORAGE_ERR_NOT_OWNED -13
+#define PJS_STORAGE_ERR_BUSY -14
+#define PJS_STORAGE_ERR_TIMEOUT -15
 
 /* A handoff is intentionally shorter than the normal ATA command timeout:
  * the caller must retain control of the running firmware if the device does
@@ -44,6 +47,23 @@ typedef struct {
     uint16_t polls;
     uint32_t elapsed_us;
 } PjsStorageDiskHandoff;
+
+enum {
+    PJS_STORAGE_DISK_UNKNOWN = 0u,
+    PJS_STORAGE_DISK_ON = 1u,
+    PJS_STORAGE_DISK_FLUSHED = 2u,
+    PJS_STORAGE_DISK_STANDBY = 3u,
+    PJS_STORAGE_DISK_OFF = 4u,
+    PJS_STORAGE_DISK_NOT_OWNED = 5u,
+    PJS_STORAGE_DISK_REFUSED = 6u,
+};
+
+typedef struct {
+    uint8_t state;
+    uint8_t ata_status;
+    uint16_t commands;
+    uint32_t elapsed_us;
+} PjsStorageDiskPower;
 
 typedef bool (*PjsSectorReadFn)(void *context, uint32_t lba,
                                 uint8_t sector[PJS_STORAGE_SECTOR_BYTES]);
@@ -182,6 +202,17 @@ int pjs_storage_ata_quiesce(PjsStorageDiskHandoff *handoff);
 int pjs_storage_prepare_disk_handoff(PjsStorageDiskHandoff *handoff);
 void pjs_storage_disk_handoff_clear(void);
 bool pjs_storage_disk_handoff_armed(void);
+
+/* Terminal storage sequencing. A successful OFF result is only possible
+ * after FLUSH CACHE and STANDBY IMMEDIATE complete, and only this API may
+ * disable the Photo's IDE0 disk rail. NOT_OWNED is a safe no-op for an
+ * embedded-only boot with no disk transaction. */
+int pjs_storage_disk_power_on(void);
+int pjs_storage_disk_flush(PjsStorageDiskPower *power);
+int pjs_storage_disk_standby(PjsStorageDiskPower *power);
+int pjs_storage_disk_power_off(PjsStorageDiskPower *power);
+int pjs_storage_disk_flush_standby_off(PjsStorageDiskPower *power);
+uint8_t pjs_storage_disk_power_state(void);
 
 int pjs_storage_state_load(PjsPersistenceState *state);
 int pjs_storage_state_write(PjsPersistenceState *state, bool publish,

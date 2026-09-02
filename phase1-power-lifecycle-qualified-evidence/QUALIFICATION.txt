@@ -1,0 +1,14 @@
+CAMPAIGN 3 POWER/LIFECYCLE QUALIFICATION
+
+Date: 2026-09-02
+Candidate SHA-256: b9d9a4a0a162419adc36dd6474b45aaa772b6dd703f554e8da7edf6514e971b3
+Candidate bytes: 1107776
+
+Operator result: all revised Campaign 3 actions behaved as expected.
+The verified restore completed after testing. The restored Rockbox SHA-256 is
+9647beba21d8f6763c441754532a8bdf37e0f974a9daf9e52b93435b887cacb1.
+No backup, transaction state, stale lineage file, or candidate image remained
+on the mounted iPod after restore.
+
+See INSTALL-STATUS.json and RESTORE-STATUS.json for the captured handoff and
+restore evidence.

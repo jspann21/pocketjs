@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "status": "hardware-qualified",
+  "campaign": "Campaign 3 - Power and complete lifecycle",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-power-lifecycle.ipod",
+    "bytes": 1107776,
+    "sha256": "b9d9a4a0a162419adc36dd6474b45aaa772b6dd703f554e8da7edf6514e971b3"
+  },
+  "package": {
+    "files": ["ACTIVE.PKT", "LASTGOOD.PKT", "APP.PKT"],
+    "bytesEach": 214056,
+    "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+    "packageHashFnv64": "0x23c3105ac6587d16",
+    "role": "previously qualified Alpha app and embedded recovery"
+  },
+  "stateSlots": [
+    {
+      "file": "STATE0.BIN",
+      "generation": 1,
+      "committed": true,
+      "sha256": "1b82ac80abc8cbea1b3777f0ade19795a398d1730f00b2ab0614443a2083b4ac"
+    },
+    {
+      "file": "STATE1.BIN",
+      "generation": 0,
+      "committed": false,
+      "sha256": "5721fb6065c6f602f5e77a4e5949573e95600d7d5e9542b05ec8e56cd66ebb17"
+    }
+  ],
+  "expectedDeviceEvidence": [
+    "PWR BAT or PWR USB/PWR FIRE",
+    "USB/FireWire transition resets inactivity and keeps or wakes the display",
+    "BAT LOW and BAT CRIT synthetic threshold behavior",
+    "CHG ONLY with low battery and USB",
+    "WAKE USB and WAKE FIRE source accounting",
+    "LCD WAKE with unchanged shared LCD clock state",
+    "DISK FLUSH before standby/off",
+    "SUSPEND and RESUME after manual and idle sleep",
+    "safe restart, automatic critical-battery shutdown, and disk-mode reboot"
+  ],
+  "checks": [
+    "ARMv4T Rust plus QuickJS Campaign 3 firmware build",
+    "static, build, and Phase 1 image verification",
+    "dependency-free fake-voltage threshold cases",
+    "scheduler, heap, filtered power, damage ABI, fragmented FAT32 and package checks",
+    "host QuickJS generated guest smoke test",
+    "PowerShell package/state/Rockbox backup-stage-restore mock round trip"
+  ],
+  "scope": "PCF50605 bounded I2C recovery, calibrated Photo battery model with debounced low-voltage policy, filtered USB/FireWire/charging state, conservative LTC4066 charger control, LCD/backlight sleep, ATA flush/standby/rail-off ordering, safe restart/automatic critical shutdown/disk-mode, suspend/resume, and per-source wake accounting. Menu+Select remains the hardware reset chord and is not used for software shutdown. Physical power interruption and Campaign 4 audio remain hardware-only/out of scope; direct OSOS install is not implemented."
+}

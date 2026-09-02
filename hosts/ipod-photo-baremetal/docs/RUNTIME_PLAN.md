@@ -68,7 +68,12 @@ recovery, and the combined rollback batch are documented in
 LCD device-gate ownership, filtered power transitions, reversible panel
 sleep/wake, shutdown preflight, and the terminal disk-mode handoff are
 documented in `PHASE1_POWER_DISK_HANDOFF.md`. Shared LCD clock selection, ATA
-standby, and PMU standby remain outside that gate.
+standby, and PMU standby remain outside that gate. Campaign 3 closes that
+remaining power/lifecycle bundle as a separately named hardware candidate in
+`PHASE1_POWER_LIFECYCLE.md`: bounded PCF50605 recovery, calibrated/debounced
+battery policy, conservative charger control, explicit ATA flush/standby/rail
+off ordering, safe restart/shutdown, suspend/resume, and wake-source
+accounting. It does not change the passed handoff candidate.
 Physical power interruption remains a separate, unqualified boundary.
 
 ### 5. Optional capabilities

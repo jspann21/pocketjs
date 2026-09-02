@@ -39,12 +39,28 @@
 #define PJS_PHASE1_NATIVE_KERNEL_GATE 0
 #endif
 
+#ifndef PJS_PHASE1_POWER_LIFECYCLE_GATE
+#define PJS_PHASE1_POWER_LIFECYCLE_GATE 0
+#endif
+
 #if PJS_PHASE1_RELIABILITY_GATE && !PJS_PHASE1_LINEAGE_GATE
 #error "The reliability gate requires the lineage gate"
 #endif
 
 #if PJS_PHASE1_NATIVE_KERNEL_GATE && !PJS_PHASE1_LINEAGE_GATE
 #error "The native kernel gate requires the lineage gate"
+#endif
+
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE && !PJS_PHASE1_NATIVE_KERNEL_GATE
+#error "The power lifecycle gate requires the native kernel gate"
+#endif
+
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE && !PJS_PHASE1_LINEAGE_GATE
+#error "The power lifecycle gate requires the lineage gate"
+#endif
+
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE && !PJS_PHASE1_POWER_TELEMETRY
+#error "The power lifecycle gate requires power telemetry"
 #endif
 
 #define PJS_PHASE1_PLACEHOLDER_BATTERY_MV 3800u
@@ -247,13 +263,28 @@ static uint32_t kernel_power_mode(uint8_t flags)
 
 static bool kernel_lcd_cycle(void)
 {
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    PjsLcdClockState clock_state = {0};
+    lcd_clock_snapshot(&clock_state);
+#endif
     backlight_enable(false);
     if (!lcd_sleep()) {
         backlight_enable(true);
         return false;
     }
     timer_delay_us(750000u);
-    if (!lcd_wake() || !lcd_present(framebuffer, PJS_FRAME_PIXELS)) return false;
+    if (!lcd_wake() || !lcd_present(framebuffer, PJS_FRAME_PIXELS)) {
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+        backlight_enable(true);
+#endif
+        return false;
+    }
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    if (!lcd_clock_state_matches(&clock_state)) {
+        backlight_enable(true);
+        return false;
+    }
+#endif
     backlight_enable(true);
     return true;
 }
@@ -270,6 +301,96 @@ static uint32_t kernel_shutdown_preflight(bool runtime_active,
         return 10u + handoff.state;
     }
     return 0u;
+}
+#endif
+
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+#define PJS_POWER_IDLE_SLEEP_US 10000000u
+#define PJS_POWER_CHORD_HOLD_US 2000000u
+
+static bool kernel_commit_clean_lineage(PjsLineageState *lineage)
+{
+    if (lineage == 0 || lineage->available == 0u) {
+        return false;
+    }
+    /* A previous terminal attempt may have committed ACTIVE and then failed
+     * while flushing or standing by the disk. Treat that already-clean
+     * record as idempotent so a retry can finish the storage sequence. */
+    if (lineage->record.phase == PJS_LINEAGE_PHASE_ACTIVE &&
+        lineage->record.trial_source == PJS_BOOT_SOURCE_NONE &&
+        lineage->record.failure_stage == PJS_BOOT_FAILURE_NONE &&
+        lineage->record.failure_code == 0u) return true;
+    if (lineage->record.phase != PJS_LINEAGE_PHASE_RUNNING) return false;
+    PjsLineageRecord clean = lineage->record;
+    clean.phase = PJS_LINEAGE_PHASE_ACTIVE;
+    clean.trial_source = PJS_BOOT_SOURCE_NONE;
+    clean.trial_hash_low = 0u;
+    clean.trial_hash_high = 0u;
+    clean.failure_stage = PJS_BOOT_FAILURE_NONE;
+    clean.failure_code = 0u;
+    return pjs_storage_lineage_write(lineage, &clean) == PJS_STORAGE_OK;
+}
+
+static bool kernel_suspend(PjsPowerLifecycle *lifecycle,
+                           PjsStorageDiskPower *disk_power)
+{
+    if (lifecycle == 0 || disk_power == 0 || lifecycle->suspended != 0u ||
+        !lcd_ready()) return false;
+    PjsLcdClockState clock_state = {0};
+    lcd_clock_snapshot(&clock_state);
+    if (pjs_storage_disk_flush_standby_off(disk_power) != PJS_STORAGE_OK) {
+        return false;
+    }
+    backlight_suspend();
+    bool panel_sleep = lcd_sleep();
+    if (!panel_sleep || !lcd_clock_state_matches(&clock_state)) {
+        /* The disk is already in a safe state. Leave the backlight on if the
+         * panel refuses the sleep command so a failed suspend is visible. */
+        backlight_resume();
+        (void)pjs_storage_disk_power_on();
+        return false;
+    }
+    power_lifecycle_set_suspended(lifecycle, true);
+    return true;
+}
+
+static bool kernel_resume(PjsPowerLifecycle *lifecycle)
+{
+    if (lifecycle == 0 || lifecycle->suspended == 0u) return false;
+    PjsLcdClockState clock_state = {0};
+    lcd_clock_snapshot(&clock_state);
+    if (pjs_storage_disk_power_on() != PJS_STORAGE_OK ||
+        !lcd_wake() || !lcd_present(framebuffer, PJS_FRAME_PIXELS) ||
+        !lcd_clock_state_matches(&clock_state)) {
+        /* A resume refusal keeps the unit in the suspended state with the
+         * display dark; no disk command is attempted after a failed wake. */
+        return false;
+    }
+    power_lifecycle_set_suspended(lifecycle, false);
+    backlight_resume();
+    return true;
+}
+
+static bool kernel_shutdown_storage(PjsLineageState *lineage,
+                                     PjsStorageDiskPower *disk_power)
+{
+    /* The lineage write can dirty the disk cache, so flush only after it is
+     * committed. An already-clean ACTIVE record is accepted above, making a
+     * retry safe if flush or standby failed after the first commit. */
+    if (!kernel_commit_clean_lineage(lineage)) return false;
+    if (pjs_storage_disk_flush(disk_power) != PJS_STORAGE_OK) return false;
+    if (pjs_storage_disk_standby(disk_power) != PJS_STORAGE_OK) return false;
+    return pjs_storage_disk_power_off(disk_power) == PJS_STORAGE_OK;
+}
+
+static void kernel_stop_runtime(PjsStorageFile *disk_package,
+                                bool *runtime_active)
+{
+    if (runtime_active != 0 && *runtime_active) {
+        qjs_runtime_shutdown();
+        *runtime_active = false;
+    }
+    if (disk_package != 0) pjs_storage_release(disk_package);
 }
 #endif
 
@@ -786,16 +907,42 @@ void kernel_main_phase1(void)
     /* Keep the already-qualified boot frame independent from I2C. Telemetry
      * starts only after the UI, cache, timer and input paths are alive. */
     power_telemetry_init();
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    /* Seed the first lifecycle decision before the idle loop. A failed ADC
+     * read remains a telemetry fault and never becomes permission to shut
+     * down. */
+    power_telemetry_sample(&power);
+#endif
 #endif
 
 #if PJS_PHASE1_NATIVE_KERNEL_GATE
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    PjsPowerLifecycle lifecycle;
+    power_lifecycle_init(&lifecycle);
+    /* Start with the LTC4066 suspended until the filtered source policy has
+     * observed a stable cable. This also clears an inherited fast-charge
+     * setting from the loader before the first lifecycle sample. */
+    (void)power_charger_set_mode(PJS_POWER_CHARGER_SUSPEND);
+    uint32_t last_battery_sample = power.samples;
+#else
     PjsPowerSourceFilter source_filter;
     power_source_filter_init(&source_filter);
+#endif
     uint8_t filtered_power = PJS_POWER_SOURCE_UNSTABLE;
     uint32_t last_power_mode = UINT32_MAX;
     bool lcd_tested = false;
     bool shutdown_ready = false;
     uint32_t next_source_sample = timer_now_us();
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    uint32_t last_i2c_recovery_count = power_i2c_recovery_count();
+    uint32_t last_user_activity = timer_now_us();
+    uint32_t restart_chord_start = 0u;
+    uint32_t suspend_chord_start = 0u;
+    bool restart_chord_fired = false;
+    bool suspend_chord_fired = false;
+    bool automatic_shutdown_attempted = false;
+    PjsStorageDiskPower disk_power = {0};
+#endif
 #endif
 
     int32_t pending_wheel_delta = 0;
@@ -813,14 +960,26 @@ void kernel_main_phase1(void)
 #if PJS_PHASE1_PERSISTENCE_GATE || PJS_PHASE1_NATIVE_KERNEL_GATE
     uint32_t previous_buttons = input.buttons;
 #endif
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    bool previous_hold = input.hold;
+#endif
 
     for (;;) {
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+        uint8_t lifecycle_wake_events = 0u;
+        bool lifecycle_source_changed = false;
+#endif
         /* This path remains hot while no frame is required. It samples input
          * continuously and preserves wheel motion until the next fixed step. */
         input_poll(&input);
 #if PJS_PHASE1_PERSISTENCE_GATE || PJS_PHASE1_NATIVE_KERNEL_GATE
+        bool buttons_changed = input.buttons != previous_buttons;
         uint32_t pressed = input.buttons & ~previous_buttons;
         previous_buttons = input.buttons;
+#endif
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+        bool hold_changed = input.hold != previous_hold;
+        previous_hold = input.hold;
 #endif
 #if PJS_PHASE1_PERSISTENCE_GATE
         if (persistence.available != 0u &&
@@ -853,7 +1012,12 @@ void kernel_main_phase1(void)
         }
 #endif
 #if PJS_PHASE1_NATIVE_KERNEL_GATE
-        if ((pressed & PJS_BUTTON_SELECT) != 0u &&
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+        if (lifecycle.suspended == 0u &&
+#else
+        if (
+#endif
+            (pressed & PJS_BUTTON_SELECT) != 0u &&
             (input.buttons & PJS_BUTTON_MENU) == 0u) {
             if (kernel_lcd_cycle()) {
                 lcd_tested = true;
@@ -862,7 +1026,12 @@ void kernel_main_phase1(void)
             } else {
                 pjs_core_set_kernel_diagnostic(8u, 20u);
             }
-        } else if ((pressed & PJS_BUTTON_PLAY) != 0u &&
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+        } else if (lifecycle.suspended == 0u &&
+#else
+        } else if (
+#endif
+            (pressed & PJS_BUTTON_PLAY) != 0u &&
             (input.buttons & PJS_BUTTON_MENU) == 0u) {
             uint32_t error = lcd_tested ? kernel_shutdown_preflight(
                 runtime_active,
@@ -886,13 +1055,86 @@ void kernel_main_phase1(void)
         if ((int32_t)(now - next_source_sample) >= 0) {
             PjsPowerSourceSample sample = {0};
             power_source_sample_read_only(&sample);
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+            bool fresh_battery_sample = power.samples != last_battery_sample;
+            if (fresh_battery_sample) last_battery_sample = power.samples;
+            uint32_t source_transitions_before = lifecycle.source_transitions;
+            uint32_t lifecycle_flags = power_lifecycle_update(
+                &lifecycle, power.battery_mv,
+                fresh_battery_sample &&
+                    (power.flags & PJS_POWER_ADC_VALID) != 0u,
+                sample.flags, sample.valid_mask);
+            uint32_t preserved_flags = power.flags &
+                (PJS_POWER_ADC_VALID | PJS_POWER_I2C_FAULT |
+                 PJS_POWER_ADC_RANGE_FAULT | PJS_POWER_TELEMETRY_DISABLED |
+                 PJS_POWER_CHARGER_LIMITED);
+            power.flags = preserved_flags | lifecycle_flags;
+            lifecycle_source_changed =
+                lifecycle.source_transitions != source_transitions_before;
+            if (power_i2c_recovery_count() != last_i2c_recovery_count) {
+                power.flags |= PJS_POWER_I2C_RECOVERED;
+                last_i2c_recovery_count = power_i2c_recovery_count();
+            }
+            filtered_power = (uint8_t)(power.flags & 0xffu);
+            lifecycle_wake_events =
+                power_lifecycle_take_wake_events(&lifecycle);
+            bool lifecycle_diagnostic = false;
+            if ((lifecycle_wake_events & PJS_POWER_WAKE_USB) != 0u) {
+                pjs_core_set_kernel_diagnostic(10u, 0u);
+                last_power_mode = UINT32_MAX;
+                lifecycle_diagnostic = true;
+            } else if ((lifecycle_wake_events & PJS_POWER_WAKE_FIREWIRE) != 0u) {
+                pjs_core_set_kernel_diagnostic(11u, 0u);
+                last_power_mode = UINT32_MAX;
+                lifecycle_diagnostic = true;
+            } else if ((power.flags & PJS_POWER_CHARGE_ONLY) != 0u) {
+                pjs_core_set_kernel_diagnostic(15u, 0u);
+                lifecycle_diagnostic = true;
+            } else if ((power.flags & PJS_POWER_BATTERY_CRITICAL) != 0u) {
+                pjs_core_set_kernel_diagnostic(17u, 0u);
+                lifecycle_diagnostic = true;
+            } else if ((power.flags & PJS_POWER_BATTERY_LOW) != 0u) {
+                pjs_core_set_kernel_diagnostic(16u, 0u);
+                lifecycle_diagnostic = true;
+            }
+#else
             filtered_power = power_source_filter_update(
                 &source_filter, sample.flags, sample.valid_mask);
+#endif
             if ((filtered_power & PJS_POWER_SOURCE_UNSTABLE) == 0u) {
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+                uint8_t desired_charger =
+                    (filtered_power & PJS_POWER_USB) != 0u ?
+                        PJS_POWER_CHARGER_USB_100MA :
+                        PJS_POWER_CHARGER_SUSPEND;
+                if (power_lifecycle_battery_state(&lifecycle) ==
+                        PJS_POWER_BATTERY_CRITICAL_STATE) {
+                    desired_charger = PJS_POWER_CHARGER_USB_100MA;
+                }
+                if (desired_charger != lifecycle.charger_mode) {
+                    if (power_charger_set_mode(desired_charger) ==
+                            PJS_POWER_RESULT_OK) {
+                        lifecycle.charger_mode = desired_charger;
+                        if (desired_charger == PJS_POWER_CHARGER_USB_100MA) {
+                            power.flags |= PJS_POWER_CHARGER_LIMITED;
+                        } else {
+                            power.flags &= ~PJS_POWER_CHARGER_LIMITED;
+                        }
+                    } else {
+                        pjs_core_set_kernel_diagnostic(8u, 60u);
+                    }
+                }
+#endif
                 uint32_t mode = kernel_power_mode(filtered_power);
                 if (mode != last_power_mode) {
                     last_power_mode = mode;
+#if !PJS_PHASE1_POWER_LIFECYCLE_GATE
                     pjs_core_set_kernel_diagnostic(mode, 0u);
+#else
+                    if (!lifecycle_diagnostic) {
+                        pjs_core_set_kernel_diagnostic(mode, 0u);
+                    }
+#endif
                 }
             }
             next_source_sample = now + 100000u;
@@ -903,6 +1145,129 @@ void kernel_main_phase1(void)
         if ((int32_t)(now - next_memory_check) >= 0) {
             if (!memory_integrity_ok()) panic_code(0x4d454d47u); /* MEMG */
             next_memory_check = now + 1000000u;
+        }
+#endif
+
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+        if (hold_changed || buttons_changed || input.wheel_delta != 0 ||
+            lifecycle_source_changed || lifecycle_wake_events != 0u) {
+            last_user_activity = now;
+        }
+
+        /* A suspended runtime still polls input and source pins, but does not
+         * execute guest frames. Any new button edge is the wake request. */
+        if (lifecycle.suspended != 0u) {
+            if (pressed != 0u || lifecycle_wake_events != 0u) {
+                if (kernel_resume(&lifecycle)) {
+                    lcd_tested = true;
+                    shutdown_ready = false;
+                    pjs_core_set_kernel_diagnostic(14u, 0u);
+                    last_user_activity = now;
+                } else {
+                    pjs_core_set_kernel_diagnostic(8u, 70u);
+                }
+            }
+        } else {
+            bool suspend_chord = (input.buttons &
+                (PJS_BUTTON_MENU | PJS_BUTTON_RIGHT)) ==
+                (PJS_BUTTON_MENU | PJS_BUTTON_RIGHT);
+            bool restart_chord = (input.buttons &
+                (PJS_BUTTON_MENU | PJS_BUTTON_LEFT)) ==
+                (PJS_BUTTON_MENU | PJS_BUTTON_LEFT);
+            if (!suspend_chord) {
+                suspend_chord_start = 0u;
+                suspend_chord_fired = false;
+            } else if (suspend_chord_start == 0u) {
+                suspend_chord_start = now;
+            } else if (!suspend_chord_fired &&
+                       (uint32_t)(now - suspend_chord_start) >=
+                           PJS_POWER_CHORD_HOLD_US) {
+                suspend_chord_fired = true;
+                bool battery_only = (filtered_power &
+                    (PJS_POWER_EXTERNAL_MASK | PJS_POWER_SOURCE_UNSTABLE)) == 0u;
+                if (!battery_only) {
+                    /* Menu+Right is a battery-only lifecycle probe. Avoid
+                     * dropping the disk rail while externally powered. */
+                    pjs_core_set_kernel_diagnostic(21u, 0u);
+                } else {
+                    pjs_core_set_kernel_diagnostic(18u, 0u);
+                    (void)render_and_present();
+                    if (kernel_suspend(&lifecycle, &disk_power)) {
+                        pjs_core_set_kernel_diagnostic(13u, 0u);
+                    } else {
+                        pjs_core_set_kernel_diagnostic(8u, 71u);
+                    }
+                }
+            }
+
+            if (!restart_chord) {
+                restart_chord_start = 0u;
+                restart_chord_fired = false;
+            } else if (restart_chord_start == 0u) {
+                restart_chord_start = now;
+            } else if (!restart_chord_fired &&
+                       (uint32_t)(now - restart_chord_start) >=
+                           PJS_POWER_CHORD_HOLD_US) {
+                restart_chord_fired = true;
+                pjs_core_set_kernel_diagnostic(18u, 0u);
+                (void)render_and_present();
+                if (!kernel_shutdown_storage(&lineage, &disk_power)) {
+                    pjs_core_set_kernel_diagnostic(8u, 72u);
+                    restart_chord_start = now;
+                } else {
+                    kernel_stop_runtime(&disk_package, &runtime_active);
+                    timer_irq_stop();
+                    irq_disable_global();
+                    backlight_suspend();
+                    (void)lcd_sleep();
+                    pp_reboot();
+                }
+            }
+
+            if (automatic_shutdown_attempted == false &&
+                power_battery_shutdown_due(
+                    &lifecycle.battery, filtered_power,
+                    (filtered_power & PJS_POWER_SOURCE_UNSTABLE) == 0u)) {
+                automatic_shutdown_attempted = true;
+                pjs_core_set_kernel_diagnostic(19u, 0u);
+                (void)render_and_present();
+                if (kernel_shutdown_storage(&lineage, &disk_power)) {
+                    kernel_stop_runtime(&disk_package, &runtime_active);
+                    timer_irq_stop();
+                    irq_disable_global();
+                    backlight_suspend();
+                    (void)lcd_sleep();
+                    (void)power_charger_set_mode(
+                        PJS_POWER_CHARGER_SUSPEND);
+                    int standby_result = power_request_standby(
+                        PJS_POWER_WAKE_EXTERNAL);
+                    if (standby_result != PJS_POWER_RESULT_OK) {
+                        /* The final ATA/lineage sequence succeeded. Keep the
+                         * unit inert if PMU standby cannot be written; a
+                         * reset here would be an unsafe reboot loop. */
+                        pjs_core_set_kernel_diagnostic(
+                            8u, 80u + (uint32_t)(-standby_result));
+                    }
+                    for (;;) __asm__ volatile("nop");
+                }
+                pjs_core_set_kernel_diagnostic(8u, 75u);
+            }
+
+            if (suspend_chord_start == 0u && restart_chord_start == 0u &&
+                (filtered_power &
+                    (PJS_POWER_EXTERNAL_MASK | PJS_POWER_SOURCE_UNSTABLE)) == 0u &&
+                (uint32_t)(now - last_user_activity) >=
+                    PJS_POWER_IDLE_SLEEP_US) {
+                if (kernel_suspend(&lifecycle, &disk_power)) {
+                    pjs_core_set_kernel_diagnostic(13u, 0u);
+                    last_user_activity = now;
+                } else {
+                    /* Avoid retrying a failed ATA/LCD sequence on every loop;
+                     * a new input edge or a later source transition retries it. */
+                    last_user_activity = now;
+                    pjs_core_set_kernel_diagnostic(8u, 76u);
+                }
+            }
         }
 #endif
 
@@ -922,6 +1287,31 @@ void kernel_main_phase1(void)
                 pjs_core_set_kernel_diagnostic(6u, 0u);
                 (void)render_and_present();
 #endif
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+                PjsStorageDiskHandoff handoff = {0};
+                if (pjs_storage_prepare_disk_handoff(&handoff) !=
+                        PJS_STORAGE_OK ||
+                    !pjs_storage_disk_handoff_armed()) {
+                    pjs_storage_disk_handoff_clear();
+                    pjs_core_set_kernel_diagnostic(
+                        8u, 40u + handoff.state);
+                    exit_chord_start = now;
+                    continue;
+                }
+                pjs_core_set_kernel_diagnostic(18u, 0u);
+                (void)render_and_present();
+                if (!kernel_shutdown_storage(&lineage, &disk_power)) {
+                    pjs_storage_disk_handoff_clear();
+                    pjs_core_set_kernel_diagnostic(
+                        8u, 41u + disk_power.state);
+                    exit_chord_start = now;
+                    continue;
+                }
+                pjs_core_set_kernel_diagnostic(20u, 0u);
+                (void)render_and_present();
+                timer_delay_us(2000000u);
+                kernel_stop_runtime(&disk_package, &runtime_active);
+#else
 #if PJS_PHASE1_LINEAGE_GATE
                 if (lineage_ready &&
                     lineage.record.phase == PJS_LINEAGE_PHASE_RUNNING) {
@@ -961,6 +1351,7 @@ void kernel_main_phase1(void)
                 qjs_runtime_shutdown();
                 pjs_storage_release(&disk_package);
 #endif
+#endif
                 timer_irq_stop();
                 irq_disable_global();
 #if PJS_PHASE1_NATIVE_KERNEL_GATE
@@ -986,8 +1377,18 @@ void kernel_main_phase1(void)
             next_power_sample = now + 1000000u;
         }
 
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+        /* A successful suspend puts the panel to sleep. Keep input, source,
+         * and battery sampling alive, but do not step the guest or transfer a
+         * dirty diagnostic frame until kernel_resume() wakes the panel. */
+        if (lifecycle.suspended != 0u) continue;
+#endif
+
         uint32_t steps = scheduler_take_fixed_batch(PJS_SCHEDULER_MAX_STEPS_PER_PASS);
         if (steps != 0u) {
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+            if (lifecycle.suspended == 0u) {
+#endif
             PjsScheduler scheduler;
             scheduler_snapshot(&scheduler);
             PjsCoreInput frame_input = core_input(&input, &power, &scheduler,
@@ -1063,6 +1464,13 @@ void kernel_main_phase1(void)
              * render. Input is polled again at the top of every batch. */
             scheduler_snapshot(&scheduler);
             if (scheduler.pending != 0u) continue;
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+            } else {
+                /* Keep the scheduler bounded while the guest and disk are
+                 * suspended; no deferred wheel motion is replayed on wake. */
+                pending_wheel_delta = 0;
+            }
+#endif
         }
 
         now = timer_now_us();

@@ -1,0 +1,63 @@
+POCKETJS IPOD PHOTO - CAMPAIGN 3 POWER/LIFECYCLE
+
+This is one install and one boot. It is a new candidate after the qualified
+native-kernel handoff campaign. Do not use it for direct OSOS installation.
+
+1. Before touching the iPod, run the dependency-free threshold cases:
+
+   python .\power_cases.py
+
+   The final line must say: cases=PASS count=6
+
+2. Connect the restored iPod in disk mode. Confirm that it is F:\ and open
+   PowerShell in this folder. Run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+3. Safely eject, disconnect the cable, and boot. Record the initial line
+   (PWR BAT, PWR USB, or PWR FIRE). Press center once and record LCD WAKE.
+   Press Play once and record SHDN READY.
+
+4. While running, connect USB and wait for the filtered PWR USB transition.
+   The display must remain on for at least 15 seconds. If the unit was already
+   asleep, insertion must wake it. Disconnect USB and, if available, connect
+   FireWire and wait for PWR FIRE with the same display behavior. Do not
+   interpret an unstable or missing source as a stable absence.
+
+5. Disconnect every cable and wait for stable PWR BAT. Hold Menu+Right for two
+   seconds. The screen and guest should suspend after
+   DISK FLUSH; release both buttons, then press one button once to wake and
+   record RESUME. RESUME is a latched last-event label and may remain visible.
+   Then leave the device untouched for at least 15 seconds once and verify that
+   automatic suspend also resumes cleanly. The threshold is 10 seconds after
+   the last accepted activity. With USB connected, Menu+Right should instead
+   show SUSP EXT and leave both the display and disk running.
+
+6. With USB connected and a low battery, record CHG ONLY and verify that the
+   charger remains conservative. This observation may be NOT AVAILABLE. Do
+   not attempt shutdown yet.
+
+7. Hold Menu+Left for two seconds to exercise safe restart. If the chord does
+   not register, release both buttons fully before one retry. After every boot,
+   press center once for LCD WAKE and Play once for SHDN READY before any
+   terminal action; Play before LCD WAKE intentionally reports KERN E04.
+   Repeat one warm restart and one cable-disconnected cold boot if stable.
+   Do not use Menu+Select: it is the iPod's native hard-reset chord and cannot
+   safely test software shutdown. Critical-battery shutdown is automatic and
+   may be marked NOT AVAILABLE unless a controlled low-battery test is safe.
+
+8. Boot once more, complete LCD WAKE and SHDN READY again, then hold Menu+Play
+   for two seconds to enter disk mode. Wait for F:\ to mount and immediately
+   run:
+
+   .\RESTORE.ps1
+
+9. Safely eject and confirm that the original Rockbox image boots normally.
+   Stop on any KERN E##, false low-battery shutdown, disk click/activity after
+   DISK OFF, reboot loop, lost display, or unexpected filesystem change. Use
+   Select+Play only for recovery if automatic disk mode fails.
+
+Return the lines and YES/NO fields in RESULTS.txt, including which cable
+transitions were physically available and any unexpected behavior. Keep both
+INSTALL-STATUS.json and RESTORE-STATUS.json with the campaign evidence.

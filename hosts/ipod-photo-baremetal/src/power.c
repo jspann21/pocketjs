@@ -7,6 +7,10 @@
 #define PCF50605_ADCC1 0x2fu
 #define PCF50605_ADCS1 0x30u
 #define PCF50605_BATTERY_CHANNEL 0x02u
+#define PCF50605_OOCC1 0x08u
+#define PCF50605_GOSTDBY 0x01u
+#define PCF50605_CHGWAK 0x20u
+#define PCF50605_EXTONWAK 0x40u
 #define I2C_SEND 0x80u
 #define I2C_READ 0x20u
 #define I2C_BUSY 0x40u
@@ -14,6 +18,17 @@
 #define I2C_WAIT_US 5000u
 #define BATTERY_MIN_MV 2500u
 #define BATTERY_MAX_MV 5000u
+
+/* The LTC4066 charger is controlled by two PP5020 GPO32 pins on Color/Photo:
+ * SUSP is active high and HPWR selects the 100/500 mA USB limit. */
+#define CHARGER_SUSPEND_MASK 0x08000000u
+#define CHARGER_FAST_MASK 0x00000040u
+
+static uint32_t i2c_recoveries;
+static uint8_t charger_mode = PJS_POWER_CHARGER_SUSPEND;
+static uint8_t standby_sources;
+
+static void recover_bus(void);
 
 static bool wait_idle(void)
 {
@@ -30,6 +45,11 @@ static void recover_bus(void)
     PP_DEV_RS |= PP_DEV_I2C;
     pp_nop3();
     PP_DEV_RS &= ~PP_DEV_I2C;
+    /* Re-apply the known PP5020 clock after a reset. A stale inherited clock
+     * must never turn an I2C timeout into an unbounded retry loop. */
+    PP_I2C_CLOCK = 0u;
+    PP_I2C_CLOCK = 0x80u;
+    if (i2c_recoveries != UINT32_MAX) ++i2c_recoveries;
 }
 
 static bool send_bytes(uint8_t address, const uint8_t *data, uint32_t length)
@@ -79,6 +99,200 @@ uint16_t power_battery_mv_from_raw(uint16_t raw)
 {
     if (raw > 1023u) raw = 1023u;
     return (uint16_t)(((uint32_t)raw * 6000u) >> 10);
+}
+
+static const uint16_t photo_discharge_curve[11] = {
+    3450u, 3660u, 3700u, 3730u, 3770u, 3820u,
+    3870u, 3920u, 4040u, 4100u, 4170u,
+};
+
+uint8_t power_battery_percent_from_mv(uint16_t mv, bool charging)
+{
+    /* The Photo's charge curve is the same conservative table for this
+     * campaign. Keep the argument in the API because a later calibrated
+     * pack may provide distinct charge/discharge points. */
+    (void)charging;
+    if (mv <= photo_discharge_curve[0]) return 0u;
+    if (mv >= photo_discharge_curve[10]) return 100u;
+    for (uint32_t index = 1u; index < 11u; ++index) {
+        uint16_t high = photo_discharge_curve[index];
+        if (mv > high) continue;
+        uint16_t low = photo_discharge_curve[index - 1u];
+        uint16_t span = (uint16_t)(high - low);
+        uint16_t offset = (uint16_t)(mv - low);
+        uint32_t tenths = ((uint32_t)offset * 10u + span / 2u) / span;
+        uint32_t percent = (index - 1u) * 10u + tenths;
+        return (uint8_t)(percent > 100u ? 100u : percent);
+    }
+    return 100u;
+}
+
+void power_battery_debounce_init(PjsPowerBatteryDebounce *battery)
+{
+    if (battery == 0) return;
+    *battery = (PjsPowerBatteryDebounce){
+        .state = PJS_POWER_BATTERY_UNKNOWN,
+    };
+}
+
+uint8_t power_battery_debounce_update(PjsPowerBatteryDebounce *battery,
+                                      uint16_t mv, bool valid)
+{
+    if (battery == 0) return PJS_POWER_BATTERY_UNKNOWN;
+    if (battery->samples != UINT32_MAX) ++battery->samples;
+    if (!valid) return battery->state;
+
+    battery->last_mv = mv;
+    if (mv <= PJS_POWER_BATTERY_SHUTOFF_MV) {
+        battery->low_samples = 0u;
+        if (battery->critical_samples != 0xffu) ++battery->critical_samples;
+        battery->good_samples = 0u;
+        if (battery->critical_samples >= PJS_POWER_BATTERY_CRITICAL_SAMPLES) {
+            battery->state = PJS_POWER_BATTERY_CRITICAL_STATE;
+        }
+        return battery->state;
+    }
+
+    battery->critical_samples = 0u;
+    if (mv <= PJS_POWER_BATTERY_LOW_MV) {
+        if (battery->low_samples != 0xffu) ++battery->low_samples;
+        battery->good_samples = 0u;
+        if (battery->low_samples >= PJS_POWER_BATTERY_LOW_SAMPLES &&
+            battery->state != PJS_POWER_BATTERY_CRITICAL_STATE) {
+            battery->state = PJS_POWER_BATTERY_LOW_STATE;
+        }
+        return battery->state;
+    }
+
+    battery->low_samples = 0u;
+    if (mv >= PJS_POWER_BATTERY_RECOVER_MV) {
+        if (battery->good_samples != 0xffu) ++battery->good_samples;
+        if (battery->good_samples >= PJS_POWER_BATTERY_GOOD_SAMPLES) {
+            battery->state = PJS_POWER_BATTERY_NORMAL;
+        }
+    } else {
+        battery->good_samples = 0u;
+    }
+    return battery->state;
+}
+
+bool power_battery_shutdown_due(const PjsPowerBatteryDebounce *battery,
+                                uint8_t stable_source,
+                                bool source_stable)
+{
+    if (battery == 0 || !source_stable ||
+        battery->state != PJS_POWER_BATTERY_CRITICAL_STATE) return false;
+    return (stable_source & PJS_POWER_SOURCE_MASK) == 0u &&
+           battery->critical_samples >= PJS_POWER_BATTERY_CRITICAL_SAMPLES;
+}
+
+void power_lifecycle_init(PjsPowerLifecycle *lifecycle)
+{
+    if (lifecycle == 0) return;
+    *lifecycle = (PjsPowerLifecycle){0};
+    power_source_filter_init(&lifecycle->source);
+    power_battery_debounce_init(&lifecycle->battery);
+    lifecycle->charger_mode = PJS_POWER_CHARGER_SUSPEND;
+}
+
+uint32_t power_lifecycle_update(PjsPowerLifecycle *lifecycle,
+                                uint16_t battery_mv, bool battery_valid,
+                                uint8_t raw_source_flags,
+                                uint8_t source_valid_mask)
+{
+    if (lifecycle == 0) {
+        return PJS_POWER_SOURCE_UNSTABLE;
+    }
+    if (lifecycle->samples != UINT32_MAX) ++lifecycle->samples;
+    uint8_t filtered = power_source_filter_update(
+        &lifecycle->source, raw_source_flags, source_valid_mask);
+    bool source_stable = (filtered & PJS_POWER_SOURCE_UNSTABLE) == 0u;
+    uint8_t source = (uint8_t)(filtered & PJS_POWER_SOURCE_MASK);
+    uint8_t previous_source = lifecycle->stable_source;
+    if (source_stable && source != previous_source) {
+        if (lifecycle->source_transitions != UINT32_MAX) {
+            ++lifecycle->source_transitions;
+        }
+        if (previous_source == 0u && source != 0u) {
+            if ((source & PJS_POWER_USB) != 0u) {
+                lifecycle->wake_events |= PJS_POWER_WAKE_USB;
+                lifecycle->wake_seen |= PJS_POWER_WAKE_USB;
+                if (lifecycle->wake_usb_count != UINT32_MAX) {
+                    ++lifecycle->wake_usb_count;
+                }
+            }
+            if ((source & PJS_POWER_FIREWIRE) != 0u) {
+                lifecycle->wake_events |= PJS_POWER_WAKE_FIREWIRE;
+                lifecycle->wake_seen |= PJS_POWER_WAKE_FIREWIRE;
+                if (lifecycle->wake_firewire_count != UINT32_MAX) {
+                    ++lifecycle->wake_firewire_count;
+                }
+            }
+            if (lifecycle->wake_count != UINT32_MAX) ++lifecycle->wake_count;
+        }
+        lifecycle->stable_source = source;
+    }
+
+    uint8_t battery_state = power_battery_debounce_update(
+        &lifecycle->battery, battery_mv, battery_valid);
+    uint32_t flags = filtered;
+    if (battery_valid) flags |= PJS_POWER_ADC_VALID;
+    if (battery_state == PJS_POWER_BATTERY_LOW_STATE) {
+        flags |= PJS_POWER_BATTERY_LOW;
+    } else if (battery_state == PJS_POWER_BATTERY_CRITICAL_STATE) {
+        flags |= PJS_POWER_BATTERY_CRITICAL | PJS_POWER_BATTERY_LOW;
+    }
+    if (source_stable && source != 0u &&
+        (battery_state == PJS_POWER_BATTERY_LOW_STATE ||
+         battery_state == PJS_POWER_BATTERY_CRITICAL_STATE)) {
+        /* External power keeps a low battery in charge-only policy; it must
+         * never be mistaken for permission to run the automatic shutoff. */
+        flags |= PJS_POWER_CHARGE_ONLY;
+    }
+    if (lifecycle->suspended != 0u) flags |= PJS_POWER_SUSPENDED;
+    if ((lifecycle->wake_seen & PJS_POWER_WAKE_USB) != 0u) {
+        flags |= PJS_POWER_WAKE_USB_SEEN;
+    }
+    if ((lifecycle->wake_seen & PJS_POWER_WAKE_FIREWIRE) != 0u) {
+        flags |= PJS_POWER_WAKE_FIREWIRE_SEEN;
+    }
+    return flags;
+}
+
+uint8_t power_lifecycle_take_wake_events(PjsPowerLifecycle *lifecycle)
+{
+    if (lifecycle == 0) return 0u;
+    uint8_t events = lifecycle->wake_events;
+    lifecycle->wake_events = 0u;
+    return events;
+}
+
+void power_lifecycle_set_suspended(PjsPowerLifecycle *lifecycle,
+                                   bool suspended)
+{
+    if (lifecycle == 0) return;
+    lifecycle->suspended = suspended ? 1u : 0u;
+}
+
+uint8_t power_lifecycle_battery_state(const PjsPowerLifecycle *lifecycle)
+{
+    return lifecycle == 0 ? PJS_POWER_BATTERY_UNKNOWN : lifecycle->battery.state;
+}
+
+uint8_t power_lifecycle_source(const PjsPowerLifecycle *lifecycle)
+{
+    return lifecycle == 0 ? 0u : lifecycle->stable_source;
+}
+
+uint32_t power_lifecycle_wake_count(const PjsPowerLifecycle *lifecycle,
+                                    uint8_t wake_source)
+{
+    if (lifecycle == 0) return 0u;
+    if (wake_source == PJS_POWER_WAKE_USB) return lifecycle->wake_usb_count;
+    if (wake_source == PJS_POWER_WAKE_FIREWIRE) {
+        return lifecycle->wake_firewire_count;
+    }
+    return lifecycle->wake_count;
 }
 
 uint8_t power_decode_source_flags(uint32_t gpioc, uint32_t gpiod,
@@ -225,4 +439,61 @@ void power_telemetry_sample(PjsPowerTelemetry *telemetry)
     }
     telemetry->flags = flags;
     ++telemetry->samples;
+}
+
+int power_charger_set_mode(uint8_t mode)
+{
+    if (mode > PJS_POWER_CHARGER_USB_500MA) {
+        return PJS_POWER_RESULT_ARGUMENT;
+    }
+
+    PP_GPO32_ENABLE |= CHARGER_SUSPEND_MASK | CHARGER_FAST_MASK;
+    if (mode == PJS_POWER_CHARGER_SUSPEND) {
+        PP_GPO32_VAL |= CHARGER_SUSPEND_MASK;
+    } else {
+        PP_GPO32_VAL &= ~CHARGER_SUSPEND_MASK;
+    }
+    if (mode == PJS_POWER_CHARGER_USB_500MA) {
+        PP_GPO32_VAL |= CHARGER_FAST_MASK;
+    } else {
+        PP_GPO32_VAL &= ~CHARGER_FAST_MASK;
+    }
+    charger_mode = mode;
+    return PJS_POWER_RESULT_OK;
+}
+
+uint8_t power_charger_mode(void)
+{
+    return charger_mode;
+}
+
+int power_request_standby(uint8_t wake_sources)
+{
+    uint8_t known = (uint8_t)PJS_POWER_WAKE_EXTERNAL;
+    if ((wake_sources & known) == 0u || (wake_sources & (uint8_t)~known) != 0u) {
+        return PJS_POWER_RESULT_ARGUMENT;
+    }
+
+    uint8_t value = PCF50605_GOSTDBY;
+    if ((wake_sources & PJS_POWER_WAKE_USB) != 0u) {
+        value = (uint8_t)(value | PCF50605_CHGWAK);
+    }
+    if ((wake_sources & PJS_POWER_WAKE_FIREWIRE) != 0u) {
+        value = (uint8_t)(value | PCF50605_EXTONWAK);
+    }
+    if (!pcf_write(PCF50605_OOCC1, value)) {
+        return PJS_POWER_RESULT_I2C;
+    }
+    standby_sources = wake_sources;
+    return PJS_POWER_RESULT_OK;
+}
+
+uint8_t power_last_standby_sources(void)
+{
+    return standby_sources;
+}
+
+uint32_t power_i2c_recovery_count(void)
+{
+    return i2c_recoveries;
 }

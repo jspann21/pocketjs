@@ -1,0 +1,24 @@
+CAMPAIGN 3 POWER/LIFECYCLE RESULTS
+
+Threshold cases: PASS / FAIL
+Initial power line: PWR ___
+After center: LCD ____
+After Play: SHDN _____
+USB transition: PWR USB / NOT AVAILABLE / FAIL
+Display stayed on 15 seconds with USB: YES / NO
+USB woke an already-suspended unit: YES / NO / NOT TESTED
+FireWire transition: PWR FIRE / NOT AVAILABLE / FAIL
+Display stayed on 15 seconds with FireWire: YES / NO / NOT AVAILABLE
+Low-battery USB policy: CHG ONLY / NOT AVAILABLE / FAIL
+Manual suspend: DISK FLUSH then SUSPEND / FAIL
+Manual resume: RESUME / FAIL
+USB manual suspend refusal: SUSP EXT / FAIL
+Automatic idle suspend/resume: YES / NO
+Safe restart: YES / NO
+Automatic critical-battery shutdown: YES / NO / NOT AVAILABLE
+Disk flush/standby before disk mode: YES / NO
+Automatic disk mode mounted F:\: YES / NO
+RESTORE VERIFIED: YES / NO
+Rockbox booted after restore: YES / NO
+No reboot loop or false shutdown: YES / NO
+Unexpected:

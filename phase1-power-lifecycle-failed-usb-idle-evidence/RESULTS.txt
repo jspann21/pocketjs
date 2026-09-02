@@ -1,0 +1,16 @@
+CAMPAIGN 3 USB-IDLE CANDIDATE - REJECTED
+
+Candidate SHA-256:
+83bc3b2b285126057a2c409797ac2890b95da379566c48005de4c2298ca9a7b5
+
+Observed on physical A1099:
+- Initial Campaign 3 steps completed through USB insertion.
+- USB insertion reported PWR USB.
+- The screen then turned completely off and required a reboot.
+- Testing stopped without proceeding past instruction step 4.
+- RESTORE.ps1 restored the original Rockbox image successfully.
+
+Diagnosis:
+The unconditional 10-second idle-suspend path could run immediately after the
+USB status update because source transitions did not reset inactivity. USB
+detection did not request PMU standby or reboot. This candidate is rejected.

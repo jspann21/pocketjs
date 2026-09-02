@@ -59,6 +59,11 @@ void pjs_core_set_lineage_diagnostic(uint32_t mode, uint32_t source,
     (void)generation;
     (void)error;
 }
+void pjs_core_set_kernel_diagnostic(uint32_t mode, uint32_t error)
+{
+    (void)mode;
+    (void)error;
+}
 void pjs_core_shutdown(void) {}
 
 int32_t pjs_package_open_ipod_photo(const uint8_t *bytes, uint32_t length,

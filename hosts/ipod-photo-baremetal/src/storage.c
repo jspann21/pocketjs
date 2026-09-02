@@ -15,8 +15,14 @@
 #define ATA_CMD_READ_SECTORS 0x20u
 #define ATA_CMD_WRITE_SECTORS 0x30u
 #define ATA_CMD_FLUSH_CACHE 0xe7u
+#define ATA_CMD_STANDBY_IMMEDIATE 0xe0u
 #define ATA_TIMEOUT_US 2000000u
+#define ATA_POWER_ON_SETTLE_US 100000u
 #define ATA_STATE_TRANSACTION_TIMEOUT_US 5000000u
+
+#ifndef PJS_PHASE1_POWER_LIFECYCLE_GATE
+#define PJS_PHASE1_POWER_LIFECYCLE_GATE 0
+#endif
 
 static uint32_t storage_error;
 static uint32_t storage_sector_reads;
@@ -34,7 +40,15 @@ static bool state_lbas_ready;
 static bool ata_transaction_active;
 static uint32_t ata_transaction_deadline;
 static bool ata_owned;
+static bool disk_claimed;
+static uint8_t disk_power_state = PJS_STORAGE_DISK_UNKNOWN;
 static bool disk_handoff_armed;
+
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+static void ide_power_set(bool enabled);
+#endif
+static void ata_prepare(void);
+static bool ata_command_no_data(uint8_t command, uint8_t *status_out);
 
 static bool ata_read_failed(uint32_t lba)
 {
@@ -91,11 +105,38 @@ static void ata_delay_400ns(void)
     (void)PP_ATA_ALT_STATUS;
 }
 
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+static void ide_power_set(bool enabled)
+{
+    if (enabled) {
+        /* GPIOJ.2 is active-low disk power on the Photo/Color board. Route
+         * the IDE pins before enabling the host so no bus line is driven while
+         * the disk rail is off. */
+        PP_GPIOJ_OUTPUT_VAL &= ~0x04u;
+        PP_GPIOI_ENABLE &= ~0xbfu;
+        PP_GPIOK_ENABLE &= ~0x1fu;
+        PP_DEV_EN |= PP_DEV_IDE0;
+        timer_delay_us(10u);
+        return;
+    }
+
+    /* The caller has already completed FLUSH CACHE and STANDBY IMMEDIATE. A
+     * reset or a command is never issued after this point. */
+    PP_DEV_EN &= ~PP_DEV_IDE0;
+    timer_delay_us(10u);
+    PP_GPIOI_ENABLE |= 0xbfu;
+    PP_GPIOK_ENABLE |= 0x1fu;
+    PP_GPIOJ_OUTPUT_VAL |= 0x04u;
+}
+#endif
+
 static void ata_prepare(void)
 {
-    /* The reversible Rockbox loader has just read this image from disk, so the
-     * drive power rail is already up. Own only the PP5020 IDE host registers
-     * in this first read-only gate; disk power transitions remain untouched. */
+    /* Campaign 3 owns the disk rail explicitly. Earlier gates leave the
+     * inherited rail alone and retain their read-only handoff behavior. */
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    ide_power_set(true);
+#endif
     PP_DEV_EN |= PP_DEV_IDE0;
     PP_IDE0_CFG |= (1u << 5);
     PP_IDE0_CFG &= ~0x10000000u;
@@ -104,6 +145,8 @@ static void ata_prepare(void)
     PP_ATA_CONTROL = 0x02u; /* nIEN: keep ATA IRQ delivery disabled. */
     ata_delay_400ns();
     ata_owned = true;
+    disk_claimed = true;
+    disk_power_state = PJS_STORAGE_DISK_ON;
 }
 
 uint8_t pjs_storage_ata_status_classify(uint8_t status)
@@ -188,6 +231,175 @@ bool pjs_storage_disk_handoff_armed(void)
     return disk_handoff_armed;
 }
 
+int pjs_storage_disk_power_on(void)
+{
+    if (!disk_claimed) {
+        disk_power_state = PJS_STORAGE_DISK_NOT_OWNED;
+        ata_owned = false;
+        return PJS_STORAGE_OK;
+    }
+    if (disk_power_state == PJS_STORAGE_DISK_ON) return PJS_STORAGE_OK;
+    if (disk_power_state != PJS_STORAGE_DISK_OFF &&
+        disk_power_state != PJS_STORAGE_DISK_UNKNOWN &&
+        disk_power_state != PJS_STORAGE_DISK_REFUSED &&
+        disk_power_state != PJS_STORAGE_DISK_FLUSHED &&
+        disk_power_state != PJS_STORAGE_DISK_STANDBY) {
+        return PJS_STORAGE_ERR_STATE;
+    }
+    ata_prepare();
+    /* The Photo's disk rail is switched independently of the PP5020 IDE
+     * block. Give a stopped spindle a bounded settle window, then require
+     * ATA RDY before the caller wakes the LCD or resumes the guest. */
+    timer_delay_us(ATA_POWER_ON_SETTLE_US);
+    if (!wait_ready()) {
+        disk_power_state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_ATA;
+    }
+    return PJS_STORAGE_OK;
+}
+
+static void disk_power_result_init(PjsStorageDiskPower *power)
+{
+    if (power != 0) *power = (PjsStorageDiskPower){
+        .state = disk_power_state,
+    };
+}
+
+int pjs_storage_disk_flush(PjsStorageDiskPower *power)
+{
+    if (power == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    disk_power_result_init(power);
+    if (!disk_claimed || !ata_owned) {
+        if (disk_power_state == PJS_STORAGE_DISK_OFF) {
+            power->state = PJS_STORAGE_DISK_REFUSED;
+            return PJS_STORAGE_ERR_STATE;
+        }
+        power->state = PJS_STORAGE_DISK_NOT_OWNED;
+        disk_power_state = PJS_STORAGE_DISK_NOT_OWNED;
+        return PJS_STORAGE_OK;
+    }
+    if (ata_transaction_active) {
+        power->state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_BUSY;
+    }
+    if (disk_power_state == PJS_STORAGE_DISK_FLUSHED) {
+        /* A failed later lifecycle stage must be retryable without issuing a
+         * second cache flush against a disk already known to be clean. */
+        power->state = PJS_STORAGE_DISK_FLUSHED;
+        power->commands = 1u;
+        return PJS_STORAGE_OK;
+    }
+    if (disk_power_state == PJS_STORAGE_DISK_STANDBY ||
+        disk_power_state == PJS_STORAGE_DISK_OFF) {
+        power->state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_STATE;
+    }
+
+    uint32_t started = timer_now_us();
+    uint8_t status = 0u;
+    if (!ata_command_no_data(ATA_CMD_FLUSH_CACHE, &status)) {
+        power->ata_status = status;
+        power->elapsed_us = (uint32_t)(timer_now_us() - started);
+        power->state = PJS_STORAGE_DISK_REFUSED;
+        disk_power_state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_ATA;
+    }
+    power->ata_status = status;
+    power->commands = 1u;
+    power->elapsed_us = (uint32_t)(timer_now_us() - started);
+    power->state = PJS_STORAGE_DISK_FLUSHED;
+    disk_power_state = PJS_STORAGE_DISK_FLUSHED;
+    return PJS_STORAGE_OK;
+}
+
+int pjs_storage_disk_standby(PjsStorageDiskPower *power)
+{
+    if (power == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    if (disk_power_state == PJS_STORAGE_DISK_ON) {
+        int rc = pjs_storage_disk_flush(power);
+        if (rc != PJS_STORAGE_OK) return rc;
+    } else if (power->state != PJS_STORAGE_DISK_FLUSHED ||
+               disk_power_state != PJS_STORAGE_DISK_FLUSHED) {
+        disk_power_result_init(power);
+    }
+    if (!disk_claimed || !ata_owned) {
+        power->state = PJS_STORAGE_DISK_NOT_OWNED;
+        return PJS_STORAGE_OK;
+    }
+    if (disk_power_state == PJS_STORAGE_DISK_STANDBY) return PJS_STORAGE_OK;
+    if (disk_power_state != PJS_STORAGE_DISK_FLUSHED) {
+        power->state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_STATE;
+    }
+    if (ata_transaction_active) {
+        power->state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_BUSY;
+    }
+
+    uint32_t started = timer_now_us();
+    uint8_t status = 0u;
+    if (!ata_command_no_data(ATA_CMD_STANDBY_IMMEDIATE, &status)) {
+        power->ata_status = status;
+        power->elapsed_us = (uint32_t)(timer_now_us() - started);
+        power->state = PJS_STORAGE_DISK_REFUSED;
+        disk_power_state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_ATA;
+    }
+    power->ata_status = status;
+    if (power->commands != UINT16_MAX) ++power->commands;
+    power->elapsed_us += (uint32_t)(timer_now_us() - started);
+    power->state = PJS_STORAGE_DISK_STANDBY;
+    disk_power_state = PJS_STORAGE_DISK_STANDBY;
+    return PJS_STORAGE_OK;
+}
+
+int pjs_storage_disk_power_off(PjsStorageDiskPower *power)
+{
+    if (power == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    if (power->state != PJS_STORAGE_DISK_STANDBY ||
+        disk_power_state != PJS_STORAGE_DISK_STANDBY) {
+        disk_power_result_init(power);
+    } else {
+        power->state = disk_power_state;
+    }
+    if (!disk_claimed) {
+        power->state = PJS_STORAGE_DISK_NOT_OWNED;
+        disk_power_state = PJS_STORAGE_DISK_NOT_OWNED;
+        return PJS_STORAGE_OK;
+    }
+    if (!ata_owned && disk_power_state == PJS_STORAGE_DISK_OFF) {
+        power->state = PJS_STORAGE_DISK_OFF;
+        return PJS_STORAGE_OK;
+    }
+    if (disk_power_state != PJS_STORAGE_DISK_STANDBY) {
+        power->state = PJS_STORAGE_DISK_REFUSED;
+        return PJS_STORAGE_ERR_STATE;
+    }
+#if PJS_PHASE1_POWER_LIFECYCLE_GATE
+    ide_power_set(false);
+#endif
+    ata_owned = false;
+    disk_handoff_armed = false;
+    disk_power_state = PJS_STORAGE_DISK_OFF;
+    power->state = PJS_STORAGE_DISK_OFF;
+    return PJS_STORAGE_OK;
+}
+
+int pjs_storage_disk_flush_standby_off(PjsStorageDiskPower *power)
+{
+    if (power == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    int rc = pjs_storage_disk_flush(power);
+    if (rc != PJS_STORAGE_OK) return rc;
+    rc = pjs_storage_disk_standby(power);
+    if (rc != PJS_STORAGE_OK) return rc;
+    return pjs_storage_disk_power_off(power);
+}
+
+uint8_t pjs_storage_disk_power_state(void)
+{
+    return disk_power_state;
+}
+
 static bool ata_read_sector(void *context, uint32_t lba,
                             uint8_t sector[PJS_STORAGE_SECTOR_BYTES])
 {
@@ -218,14 +430,20 @@ static bool ata_read_sector(void *context, uint32_t lba,
     return completion_ready(status) ? true : ata_read_failed(lba);
 }
 
-static bool ata_flush(void)
+static bool ata_command_no_data(uint8_t command, uint8_t *status_out)
 {
     if (!wait_ready()) return false;
-    PP_ATA_COMMAND = ATA_CMD_FLUSH_CACHE;
+    PP_ATA_COMMAND = command;
     ata_delay_400ns();
     if (!wait_bsy_clear()) return false;
     uint8_t status = PP_ATA_STATUS;
+    if (status_out != 0) *status_out = status;
     return completion_ready(status);
+}
+
+static bool ata_flush(void)
+{
+    return ata_command_no_data(ATA_CMD_FLUSH_CACHE, 0);
 }
 
 static bool ata_write_sector(uint32_t lba,

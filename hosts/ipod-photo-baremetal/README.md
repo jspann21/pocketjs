@@ -119,3 +119,18 @@ real no-std Rust PocketJS core, keeps 60 Hz fixed simulation, limits DrawList
 planning to 30 Hz, rasterizes only retained damage rectangles, and transfers
 only those rectangles to the LCD. The expensive first full frame completes
 before Timer1 starts. PCF50605/I2C telemetry remains disabled for this gate.
+
+## Campaign 3: power and complete lifecycle
+
+The next standalone hardware candidate is documented in
+`docs/PHASE1_POWER_LIFECYCLE.md` and packaged in
+`phase1-power-lifecycle-simple`. Build it with
+`Makefile.phase1 POWER_LIFECYCLE_GATE=1 NATIVE_KERNEL_GATE=1
+LINEAGE_GATE=1`. This candidate adds bounded PCF50605 recovery, calibrated
+and debounced battery policy, filtered USB/FireWire/charging state,
+conservative charger control, ATA flush/standby/rail-off ordering, LCD and
+backlight sleep, safe restart/shutdown/disk mode, suspend/resume, and
+wake-source accounting. Candidate
+`b9d9a4a0a162419adc36dd6474b45aaa772b6dd703f554e8da7edf6514e971b3`
+passed its revised physical procedure and verified restore on 2026-09-02. It
+does not install directly into OSOS or add Campaign 4 audio.

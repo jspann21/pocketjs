@@ -253,6 +253,19 @@ uint8_t lcd_panel_type(void)
     return panel_type;
 }
 
+void lcd_clock_snapshot(PjsLcdClockState *state)
+{
+    if (state == 0) return;
+    state->source = PP_CLOCK_SOURCE;
+    state->clcd_source = PP_CLCD_CLOCK_SRC;
+}
+
+bool lcd_clock_state_matches(const PjsLcdClockState *state)
+{
+    return state != 0 && state->source == PP_CLOCK_SOURCE &&
+           state->clcd_source == PP_CLCD_CLOCK_SRC;
+}
+
 uint16_t lcd_rgb565_swapped(uint8_t r, uint8_t g, uint8_t b)
 {
     uint16_t native = (uint16_t)(((uint16_t)(r & 0xf8u) << 8) |

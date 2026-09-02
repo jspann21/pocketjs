@@ -24,6 +24,26 @@ void backlight_enable(bool enabled)
     current_enabled = enabled;
 }
 
+bool backlight_enabled(void)
+{
+    return current_enabled;
+}
+
+uint8_t backlight_brightness(void)
+{
+    return current_brightness;
+}
+
+void backlight_suspend(void)
+{
+    backlight_enable(false);
+}
+
+void backlight_resume(void)
+{
+    backlight_enable(true);
+}
+
 void backlight_init(void)
 {
     /* B2/B3 are owned by the backlight path; B3 gates the panel light. */
