@@ -1,0 +1,8 @@
+Boot 1 / BETA: SAFE A G00003
+After center / ALPHA recovery: RECV E G00004
+Recovery wheel responsive: YES
+Boot 2 / ALPHA rollback: ROLL L G00006
+Boot 3 / ALPHA retained: KEEP L G00009
+RESTORE VERIFIED: YES
+Rockbox booted after restore: YES
+Unexpected: none

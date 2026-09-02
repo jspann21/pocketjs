@@ -31,18 +31,33 @@
 #define PJS_PHASE1_LINEAGE_GATE 0
 #endif
 
+#ifndef PJS_PHASE1_RELIABILITY_GATE
+#define PJS_PHASE1_RELIABILITY_GATE 0
+#endif
+
+#if PJS_PHASE1_RELIABILITY_GATE && !PJS_PHASE1_LINEAGE_GATE
+#error "The reliability gate requires the lineage gate"
+#endif
+
 #define PJS_PHASE1_PLACEHOLDER_BATTERY_MV 3800u
 #define PJS_WHEEL_DELTA_LIMIT 127
 #define PJS_LAUNCHER_PACKAGE_HASH_LOW 0x901119b9u
 #define PJS_LAUNCHER_PACKAGE_HASH_HIGH 0x1868f7bau
+#define PJS_MEMORY_GUARD_WORDS 64u
+#define PJS_STACK_GUARD_PATTERN 0x53544b47u
+#define PJS_HEAP_GUARD_PATTERN 0x48454147u
+#define PJS_RUNTIME_MIN_LARGEST_FREE (8u * 1024u * 1024u)
 
 extern unsigned char __heap_start;
 extern unsigned char __ram_end;
+extern unsigned char __stack_bottom;
 extern const uint8_t pjs_embedded_package[];
 extern const uint32_t pjs_embedded_package_length;
 
 static uint16_t framebuffer[PJS_FRAME_PIXELS] __attribute__((aligned(16)));
 static uint32_t last_presented_damage_area;
+static volatile uint32_t *stack_guard;
+static volatile uint32_t *heap_guard;
 
 typedef struct {
     const char *file_name;
@@ -85,9 +100,33 @@ static void initialize_heap(void)
     uintptr_t end = (uintptr_t)&__ram_end;
     if (end <= start + PJS_HEAP_TOP_GUARD) panic_code(0x48454131u); /* HEA1 */
     end -= PJS_HEAP_TOP_GUARD;
+    stack_guard = (volatile uint32_t *)(uintptr_t)&__stack_bottom;
+    heap_guard = (volatile uint32_t *)end;
+    for (uint32_t index = 0u; index < PJS_MEMORY_GUARD_WORDS; ++index) {
+        stack_guard[index] = PJS_STACK_GUARD_PATTERN;
+        heap_guard[index] = PJS_HEAP_GUARD_PATTERN;
+    }
     if (!pjs_heap_init((void *)start, end - start) || !pjs_heap_validate()) {
         panic_code(0x48454132u); /* HEA2 */
     }
+}
+
+static bool memory_integrity_ok(void)
+{
+    if (!pjs_heap_validate()) return false;
+    for (uint32_t index = 0u; index < PJS_MEMORY_GUARD_WORDS; ++index) {
+        if (stack_guard[index] != PJS_STACK_GUARD_PATTERN ||
+            heap_guard[index] != PJS_HEAP_GUARD_PATTERN) return false;
+    }
+    return true;
+}
+
+static bool runtime_memory_admitted(void)
+{
+    if (!memory_integrity_ok()) return false;
+    PjsHeapStats stats = {0};
+    pjs_heap_stats(&stats);
+    return stats.largest_free >= PJS_RUNTIME_MIN_LARGEST_FREE;
 }
 
 static int32_t clamp_wheel_delta(int32_t value)
@@ -113,6 +152,26 @@ static void reset_core_after_failed_guest(void)
     pjs_core_shutdown();
     if (pjs_core_init() != 0) panic_code(0x50314331u); /* P1C1 */
 }
+
+#if PJS_PHASE1_RELIABILITY_GATE
+static bool boot_embedded_recovery(PjsGuestPackage *guest,
+                                   PjsCoreInput *input)
+{
+    reset_core_after_failed_guest();
+    *guest = (PjsGuestPackage){0};
+    if (pjs_package_open_ipod_photo(
+            pjs_embedded_package, pjs_embedded_package_length, guest) != 0) {
+        return false;
+    }
+    input->runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
+    if (!qjs_runtime_boot(guest) || !qjs_runtime_frame(input)) {
+        qjs_runtime_shutdown();
+        return false;
+    }
+    input->runtime_status = PJS_RUNTIME_READY;
+    return true;
+}
+#endif
 
 static void remember_boot_failure(uint32_t stage, uint32_t code,
                                   uint32_t *failure_stage,
@@ -334,6 +393,10 @@ void kernel_main_phase1(void)
     bool lineage_accept_pending = false;
     uint32_t lineage_event = 4u;
     PjsLineageRecord lineage_accept = {0};
+#if PJS_PHASE1_RELIABILITY_GATE
+    bool admission_rejected = false;
+    bool embedded_recovery_attempted = false;
+#endif
 #else
     PjsStorageCatalog catalog = {0};
     int32_t discovery_result = pjs_storage_discover_apps(&catalog);
@@ -431,12 +494,27 @@ void kernel_main_phase1(void)
                     disk_package.bytes, disk_package.length, &guest);
             }
             if (package_result != 0) {
+#if PJS_PHASE1_RELIABILITY_GATE
+                if (source == PJS_BOOT_SOURCE_PENDING && package_result == -4) {
+                    admission_rejected = true;
+                }
+#endif
                 remember_boot_failure(PJS_BOOT_FAILURE_PACKAGE,
                                       error_magnitude(package_result),
                                       &boot_failure_stage, &boot_failure_code);
                 pjs_storage_release(&disk_package);
                 continue;
             }
+
+#if PJS_PHASE1_RELIABILITY_GATE
+            if (!runtime_memory_admitted()) {
+                remember_boot_failure(PJS_BOOT_FAILURE_MEMORY, 1u,
+                                      &boot_failure_stage, &boot_failure_code);
+                if (source == PJS_BOOT_SOURCE_PENDING) admission_rejected = true;
+                pjs_storage_release(&disk_package);
+                continue;
+            }
+#endif
 
             bool is_new_pending = source == PJS_BOOT_SOURCE_PENDING &&
                 source != boot_record.active_source;
@@ -484,6 +562,11 @@ void kernel_main_phase1(void)
                 runtime_from_disk = source != PJS_BOOT_SOURCE_EMBEDDED;
                 boot_source = source;
                 lineage_event = rollback ? 1u : (is_new_pending ? 0u : 2u);
+#if PJS_PHASE1_RELIABILITY_GATE
+                if (admission_rejected && boot_record.generation == 1u) {
+                    lineage_event = 5u;
+                }
+#endif
                 lineage_accept = lineage.record;
                 lineage_accept.phase = PJS_LINEAGE_PHASE_RUNNING;
                 if (source != boot_record.active_source) {
@@ -619,7 +702,7 @@ void kernel_main_phase1(void)
 #if PJS_PHASE1_LINEAGE_GATE
     if (!lineage_ready) {
         pjs_core_set_lineage_diagnostic(
-            4u, 0u, 0u, error_magnitude(lineage_result));
+            6u, 0u, 0u, error_magnitude(lineage_result));
     }
 #endif
     if (pjs_core_step(&initial_input) < 0) panic_code(0x50314332u); /* P1C2 */
@@ -628,7 +711,7 @@ void kernel_main_phase1(void)
     if (lineage_ready && lineage_accept_pending) {
         if (last_presented_damage_area == 0u) {
             pjs_core_set_lineage_diagnostic(
-                4u, boot_source, lineage.record.generation,
+                6u, boot_source, lineage.record.generation,
                 (uint32_t)(-PJS_STORAGE_ERR_VERIFY));
         } else if (pjs_storage_lineage_write(
                        &lineage, &lineage_accept) == PJS_STORAGE_OK) {
@@ -636,7 +719,7 @@ void kernel_main_phase1(void)
                 lineage_event, boot_source, lineage.record.generation, 0u);
         } else {
             pjs_core_set_lineage_diagnostic(
-                4u, boot_source, lineage.record.generation, lineage.error);
+                6u, boot_source, lineage.record.generation, lineage.error);
         }
         last_frame_us = render_and_present();
     }
@@ -662,6 +745,9 @@ void kernel_main_phase1(void)
     uint32_t next_power_sample = now + 1000000u;
 #endif
     uint32_t next_present = now;
+#if PJS_PHASE1_RELIABILITY_GATE
+    uint32_t next_memory_check = now + 1000000u;
+#endif
 #if PJS_PHASE1_PERSISTENCE_GATE
     uint32_t previous_buttons = input.buttons;
 #endif
@@ -705,6 +791,13 @@ void kernel_main_phase1(void)
         pending_wheel_delta = clamp_wheel_delta(
             pending_wheel_delta + (int32_t)input.wheel_delta);
         now = timer_now_us();
+
+#if PJS_PHASE1_RELIABILITY_GATE
+        if ((int32_t)(now - next_memory_check) >= 0) {
+            if (!memory_integrity_ok()) panic_code(0x4d454d47u); /* MEMG */
+            next_memory_check = now + 1000000u;
+        }
+#endif
 
         uint32_t chord = PJS_BUTTON_MENU | PJS_BUTTON_PLAY;
         if ((input.buttons & chord) == chord) {
@@ -775,7 +868,7 @@ void kernel_main_phase1(void)
                                 lineage.record.generation, 0u);
                         } else {
                             pjs_core_set_lineage_diagnostic(
-                                4u, crashed.active_source,
+                                6u, crashed.active_source,
                                 lineage.record.generation, lineage.error);
                         }
                     }
@@ -783,6 +876,27 @@ void kernel_main_phase1(void)
                     pjs_core_set_boot_diagnostic(
                         boot_source, boot_failure_stage, boot_failure_code,
                         pjs_storage_sector_read_count());
+#endif
+#if PJS_PHASE1_RELIABILITY_GATE
+                    if (!embedded_recovery_attempted) {
+                        embedded_recovery_attempted = true;
+                        pjs_storage_release(&disk_package);
+                        if (boot_embedded_recovery(&guest, &frame_input)) {
+                            runtime_active = true;
+                            runtime_from_disk = false;
+                            runtime_status = PJS_RUNTIME_READY;
+                            boot_source = PJS_BOOT_SOURCE_EMBEDDED;
+                            frame_input.runtime_status = runtime_status;
+                            pjs_core_set_lineage_diagnostic(
+                                4u, PJS_BOOT_SOURCE_EMBEDDED,
+                                lineage.record.generation, 0u);
+                        } else {
+                            pjs_core_set_lineage_diagnostic(
+                                6u, PJS_BOOT_SOURCE_EMBEDDED,
+                                lineage.record.generation,
+                                qjs_runtime_error_code());
+                        }
+                    }
 #endif
                 }
                 if (pjs_core_step(&frame_input) < 0) {

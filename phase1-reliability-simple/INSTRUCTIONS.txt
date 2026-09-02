@@ -1,0 +1,37 @@
+POCKETJS IPOD PHOTO - RUNTIME RELIABILITY BATCH
+
+This is one install and three boots. Do not reconnect between boots.
+
+1. Connect the restored iPod in disk mode. Confirm it is F:\.
+2. Open PowerShell in this folder and run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+3. Safely eject and boot. BETA should launch. Record the top-right line.
+4. Press center once. The screen should recover to ALPHA without rebooting.
+   Record the new top-right line and confirm the wheel still works.
+5. Hold Menu+Play for two seconds. ALPHA should launch after reboot. Record
+   the top-right line.
+6. Hold Menu+Play for two seconds again. ALPHA should launch. Record the line.
+7. Reconnect in disk mode and run:
+
+   .\RESTORE.ps1
+
+8. Safely eject and confirm normal Rockbox boot.
+
+Expected lines:
+
+   SAFE A G00003
+   RECV E G00004
+   ROLL L G00006
+   KEEP L G00009
+
+Any LINE E## line, MEMG panic, missing app, or different generation is a
+failure. Reconnect in disk mode and run .\RESTORE.ps1. Do not repeat earlier
+rectangle, heartbeat, Hold, power, launcher, ordinary-app, or persistence
+observations.
+
+Return only the four lines, whether recovery remained responsive, whether
+restore verified, whether Rockbox booted, and anything unexpected. Send a
+photo only if a line is missing or unreadable.

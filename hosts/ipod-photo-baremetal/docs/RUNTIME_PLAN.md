@@ -62,6 +62,9 @@ The confined state writer is hardware-qualified in `PHASE1_PERSISTENCE.md`.
 The first-presented-frame acceptance, crash lineage, rejected-hash quarantine,
 and rollback campaign is documented in `PHASE1_LINEAGE.md`. It uses those same
 two exact preallocated sectors and does not write packages or FAT metadata.
+Strict fixed-plan admission, memory reserve/guard enforcement, live embedded
+recovery, and the combined rollback batch are documented in
+`PHASE1_RELIABILITY.md`.
 Physical power interruption remains a separate, unqualified boundary.
 
 ### 5. Optional capabilities

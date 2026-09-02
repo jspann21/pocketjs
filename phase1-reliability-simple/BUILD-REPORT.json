@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "status": "host-verified; hardware-pending",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-reliability.ipod",
+    "bytes": 1100196,
+    "sha256": "a36bdbbf716e7229526319673521d963e28899a1516a2416291168b8cd50be64"
+  },
+  "packages": [
+    {
+      "file": "ACTIVE.PKT",
+      "role": "Beta active app with deliberate center-button watchdog fault",
+      "bytes": 214360,
+      "sha256": "b58d7cbeae0545cfaa5e0de3c9028ca18d98d3b4dd841f1f5934a0f3e298a58c",
+      "packageHashFnv64": "0x8ab6cfcd9bbe58dc"
+    },
+    {
+      "file": "PENDING.PKT",
+      "role": "container-valid Alpha package with an inadmissible 221x176 logical viewport",
+      "bytes": 214056,
+      "sha256": "28d2d032667f272ea64a9698bf9eb3d277485d96dc8148d60f954fb89a0a4859",
+      "packageHashFnv64": "0x6f5cbb4b7e44e9a0"
+    },
+    {
+      "file": "LASTGOOD.PKT",
+      "role": "known-good Alpha rollback app and embedded recovery payload",
+      "bytes": 214056,
+      "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+      "packageHashFnv64": "0x23c3105ac6587d16"
+    }
+  ],
+  "stateSlots": [
+    {
+      "file": "STATE0.BIN",
+      "bytes": 512,
+      "generation": 1,
+      "phase": "ACTIVE",
+      "committed": true,
+      "sha256": "54790fdff256da8bea3657cc263049265a0054345877a26b5c47c985d5b9f72f"
+    },
+    {
+      "file": "STATE1.BIN",
+      "bytes": 512,
+      "generation": 0,
+      "phase": "ACTIVE",
+      "committed": false,
+      "sha256": "9e023435957d8fcc0b5c918e5ff07f54c91ff92c455ad70fde249bc43fea9ffe"
+    }
+  ],
+  "expectedDeviceEvidence": [
+    "SAFE A G00003",
+    "RECV E G00004",
+    "ROLL L G00006",
+    "KEEP L G00009"
+  ],
+  "checks": [
+    "TypeScript no-emit check",
+    "127 existing pocketjs-core tests",
+    "ARMv4T Rust plus QuickJS firmware build",
+    "static and Phase 1 image verification",
+    "host QuickJS generated guest",
+    "scheduler, heap, power, damage ABI, FAT32, lineage and package checks",
+    "container-valid bad-plan package construction and re-verification",
+    "PowerShell package/state/Rockbox backup-stage-restore mock round trip",
+    "restore refusal for an externally changed rockbox.ipod"
+  ],
+  "scope": "Strict fixed-plan admission, 8 MiB runtime memory reserve, stack/heap guards, live embedded recovery, and existing lineage rollback. Physical power interruption remains unqualified."
+}

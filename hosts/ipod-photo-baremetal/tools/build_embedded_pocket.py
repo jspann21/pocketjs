@@ -70,10 +70,19 @@ def build_package(source: bytes) -> bytes:
     ).encode("utf-8")
     plan = json.dumps(
         {
-            "hostAbi": HOST_ABI,
             "output": "a1099-runtime-smoke",
-            "target": TARGET,
-            "viewport": {"height": 176, "width": 220},
+            "features": {
+                "input.buttons": True,
+                "text.glyphs.baked": True,
+            },
+            "target": {"hostAbi": HOST_ABI, "id": TARGET},
+            "viewport": {
+                "logical": [220, 176],
+                "physical": [220, 176],
+                "policy": "fixed",
+                "presentation": "native",
+                "rasterDensity": 1,
+            },
         },
         sort_keys=True,
         separators=(",", ":"),

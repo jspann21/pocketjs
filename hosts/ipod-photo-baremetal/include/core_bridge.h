@@ -64,6 +64,7 @@ _Static_assert(sizeof(PjsCoreDamagePlan) == 144u, "damage plan ABI changed");
 #define PJS_BOOT_FAILURE_FRAME 4u
 #define PJS_BOOT_FAILURE_EMBEDDED_PACKAGE 5u
 #define PJS_BOOT_FAILURE_EMBEDDED_QUICKJS 6u
+#define PJS_BOOT_FAILURE_MEMORY 7u
 
 typedef struct {
     const uint8_t *javascript;

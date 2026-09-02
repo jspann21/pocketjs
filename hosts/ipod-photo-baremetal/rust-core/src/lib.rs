@@ -502,7 +502,7 @@ pub extern "C" fn pjs_core_set_lineage_diagnostic(
         return;
     };
     let mut text = String::with_capacity(16);
-    if mode >= 4 {
+    if mode >= 6 {
         text.push_str("LINE E");
         push_fixed_decimal(&mut text, error, &[10, 1]);
         set_boot_diagnostic_text(state, &text, abgr(150, 20, 38, 255));
@@ -512,7 +512,9 @@ pub extern "C" fn pjs_core_set_lineage_diagnostic(
         0 => "ACPT ",
         1 => "ROLL ",
         2 => "KEEP ",
-        _ => "CRSH ",
+        3 => "CRSH ",
+        4 => "RECV ",
+        _ => "SAFE ",
     });
     text.push(match source {
         1 => 'P',
@@ -532,7 +534,9 @@ pub extern "C" fn pjs_core_set_lineage_diagnostic(
         0 => abgr(16, 112, 72, 255),
         1 => abgr(142, 75, 0, 255),
         2 => abgr(0, 92, 110, 255),
-        _ => abgr(150, 20, 38, 255),
+        3 => abgr(150, 20, 38, 255),
+        4 => abgr(96, 42, 150, 255),
+        _ => abgr(16, 112, 72, 255),
     };
     set_boot_diagnostic_text(state, &text, color);
 }
@@ -855,6 +859,18 @@ pub extern "C" fn pjs_package_open_ipod_photo(
         Ok(guest) => guest,
         Err(_) => return -2,
     };
+    let plan_contract = package::FixedPlanContract {
+        target: "ipod-photo",
+        host_abi: 1,
+        width: WIDTH,
+        height: HEIGHT,
+        presentation: "native",
+        raster_density: 1,
+        supported_features: &["input.buttons", "text.glyphs.baked"],
+    };
+    if package::validate_fixed_plan(guest.plan, &plan_contract).is_err() {
+        return -4;
+    }
     if guest.js.is_empty() || guest.js.len() > u32::MAX as usize ||
         guest.pak.len() > u32::MAX as usize || guest.plan.len() > u32::MAX as usize {
         return -3;
