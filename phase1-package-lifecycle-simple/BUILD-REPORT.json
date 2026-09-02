@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "host-validated; physical result pending",
+  "status": "hardware-qualified",
   "candidate": {
     "file": "pocketjs-a1099-phase1-package-lifecycle.ipod",
     "bytes": 1048476,
@@ -26,6 +26,11 @@
     "ACTV P02 R#####",
     "EMBD P02 R#####"
   ],
+  "observedBoots": [
+    "ACTV P02 R00756",
+    "EMBD P02 R00420"
+  ],
+  "restoredRockboxSha256": "e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd",
   "checks": [
     "ARM firmware build",
     "static image verification",

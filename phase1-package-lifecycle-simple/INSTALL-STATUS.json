@@ -1,0 +1,46 @@
+﻿{
+    "schema":  1,
+    "verifiedAt":  "2026-09-01T20:06:42.8260465-04:00",
+    "mount":  "F:\\",
+    "phase":  "active",
+    "candidate":  {
+                      "file":  "pocketjs-a1099-phase1-package-lifecycle.ipod",
+                      "sha256":  "a55eeb41b3a9afb35b525aa1c5cfbf5ad015d1b9136ea724a32c57b85f963702"
+                  },
+    "packageSlots":  {
+                         "PENDING.PKT":  "eca8936f299161b3668622247e740bae0de93ddd6dfcf432525e6404cf1df630",
+                         "ACTIVE.PKT":  "d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b",
+                         "LASTGOOD.PKT":  null,
+                         "APP.PKT":  null
+                     },
+    "handoff":  {
+                    "requestedPath":  "F:\\",
+                    "directory":  "F:\\.rockbox",
+                    "targetExists":  true,
+                    "targetSha256":  "a55eeb41b3a9afb35b525aa1c5cfbf5ad015d1b9136ea724a32c57b85f963702",
+                    "backupExists":  true,
+                    "backupSha256":  "e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd",
+                    "state":  {
+                                  "version":  2,
+                                  "directory":  "F:\\.rockbox",
+                                  "target":  "rockbox.ipod",
+                                  "backup":  "rockbox.ipod.pocketjs-backup",
+                                  "original":  {
+                                                   "bytes":  1166176,
+                                                   "sha256":  "e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd",
+                                                   "imageBytes":  1166168,
+                                                   "imageSha256":  "44545dcc954b8f7abfdeb158ed5c8242f95cdc763fbc4f1d8e96e2611e355ba1"
+                                               },
+                                  "probe":  {
+                                                "path":  "C:\\Users\\ajrty\\Desktop\\Projects\\pocketjs\\phase1-package-lifecycle-simple\\pocketjs-a1099-phase1-package-lifecycle.ipod",
+                                                "bytes":  1048476,
+                                                "sha256":  "a55eeb41b3a9afb35b525aa1c5cfbf5ad015d1b9136ea724a32c57b85f963702",
+                                                "imageBytes":  1048468,
+                                                "imageSha256":  "f96cf954a539a29efea61bb232687af638a3555b89ba3f3554fb70f8315401f2"
+                                            }
+                              },
+                    "staleStateFiles":  [
+
+                                        ]
+                }
+}

@@ -84,19 +84,25 @@ slot-0 glyph cell fully on-screen. Installation and restoration records verify
 the candidate, disk package, original Rockbox hash, and absence of remaining
 handoff state.
 
-## Package-lifecycle candidate awaiting physical result
+## Package-lifecycle qualification
 
 - File: `pocketjs-a1099-phase1-package-lifecycle.ipod`
 - SHA-256: `a55eeb41b3a9afb35b525aa1c5cfbf5ad015d1b9136ea724a32c57b85f963702`
 - Valid active package SHA-256: `d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b`
 - Rejected pending package SHA-256: `eca8936f299161b3668622247e740bae0de93ddd6dfcf432525e6404cf1df630`
+- Active-path evidence: `ACTV P02 R00756`
+- Embedded-fallback evidence: `EMBD P02 R00420`
+- Original Rockbox restored SHA-256: `e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd`
 
 This candidate adds the read-only `PENDING.PKT` → `ACTIVE.PKT` →
 `LASTGOOD.PKT` → `APP.PKT` → embedded selection order. QuickJS boot and the
-first guest frame must succeed before a disk slot is accepted. The two-boot
-physical gate expects `ACTV P02 R#####` and then `EMBD P02 R#####` from one
-firmware installation. It is not part of the qualified scope until the
-completed result and verified restore records are returned.
+first guest frame must succeed before a disk slot is accepted. One firmware
+installation physically qualified rejection of the corrupt pending package,
+selection of the valid active package, and embedded fallback after the active
+package was removed. The ordinary app rendered in both boots; center and wheel
+worked during the first boot. The exact original Rockbox image and prior
+package-slot state were restored, with no backup, handoff state, stale state,
+or package transaction remaining.
 
 ## Qualified scope
 
@@ -112,6 +118,7 @@ completed result and verified restore records are returned.
 - Read-only PIO ATA + FAT32 loading of `/POCKETJS/APP.PKT`
 - Multi-cluster ordinary-app disk loading with explicit source/read evidence
 - Invalid/corrupt disk package rejection with embedded recovery `.pocket` fallback
+- Read-only pending, active, last-good, legacy, and embedded package selection
 - Runtime Hold transition with no QuickJS fault or scheduler drop
 
 ## Observed performance
