@@ -104,7 +104,7 @@ worked during the first boot. The exact original Rockbox image and prior
 package-slot state were restored, with no backup, handoff state, stale state,
 or package transaction remaining.
 
-## Multi-app launcher candidate
+## Multi-app launcher qualification
 
 - File: `pocketjs-a1099-phase1-multi-app.ipod`
 - SHA-256: `de5e44d771b10a4d0d7b2d8d11411d428a5ed90ff0b7632de7d2d5d13653323b`
@@ -113,15 +113,20 @@ or package transaction remaining.
 - BETA.PKT SHA-256: `de70763dab50c79381e38c3ead29fe2361584a33a157745038f7ff31a85fe7a9`
 - Expected Alpha evidence: `APP 1/2 R#####`
 - Expected Beta evidence: `APP 2/2 R#####`
-- Status: host-validated; physical result pending
+- Observed Alpha evidence: `APP 1/2 R00847`
+- Observed Beta evidence: `APP 2/2 R00847`
+- Original Rockbox restored SHA-256: `e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd`
 
 This candidate adds bounded read-only discovery under `/POCKETJS/APPS`,
 deterministic filename sorting, a pinned packaged launcher, and selection of
 two distinct ordinary framework apps from one installation. The physical gate
-uses two boots separated by Menu+Play reboot, without reconnecting or staging
-different files between boots. Qualification remains pending until both apps
-launch with the expected source lines and the exact prior Rockbox and package
-tree are restored.
+used two boots separated by Menu+Play reboot, without reconnecting or staging
+different files between boots. The launcher listed both apps, wheel selection
+opened Beta, and both distinct packages launched with the expected ordinal and
+identical 847-sector read counts. Both launches were observed to be somewhat
+slow, but they completed. The restore record verifies the exact original
+Rockbox hash, no remaining backup or handoff state, and no remaining multi-app
+transaction.
 
 ## Qualified scope
 
@@ -138,7 +143,7 @@ tree are restored.
 - Multi-cluster ordinary-app disk loading with explicit source/read evidence
 - Invalid/corrupt disk package rejection with embedded recovery `.pocket` fallback
 - Read-only pending, active, last-good, legacy, and embedded package selection
-- Host-validated bounded multi-app discovery and packaged launcher (physical gate pending)
+- Bounded multi-app discovery, packaged launcher, and two-app selection
 - Runtime Hold transition with no QuickJS fault or scheduler drop
 
 ## Observed performance

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "host-validated-physical-pending",
+  "status": "hardware-qualified",
   "candidate": {
     "file": "pocketjs-a1099-phase1-multi-app.ipod",
     "bytes": 1053204,
@@ -33,6 +33,13 @@
     "APP 1/2 R#####",
     "APP 2/2 R#####"
   ],
+  "observedDeviceEvidence": [
+    "APP 1/2 R00847",
+    "APP 2/2 R00847"
+  ],
+  "menuPlayReboot": "passed",
+  "performanceObservation": "Alpha and Beta were a bit slow to launch, but both launched.",
+  "restoredRockboxSha256": "e1735b38b0c261a3c0bb65f513568ebc608cb1b44fc9da092b398d37f0907cbd",
   "checks": [
     "TypeScript",
     "three target package builds and package verification",

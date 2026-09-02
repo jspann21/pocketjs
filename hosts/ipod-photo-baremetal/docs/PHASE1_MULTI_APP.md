@@ -28,3 +28,9 @@ The selected app has one native, position-stable source line:
 cumulative sector-read count and varies with FAT32 layout. `RESTORE.ps1`
 restores the original Rockbox image and the exact prior launcher and `APPS`
 contents or absence.
+
+The exact batch was physically qualified with `APP 1/2 R00847` and
+`APP 2/2 R00847`. Menu+Play returned to the launcher, wheel selection opened
+Beta, and the verified restore removed all transaction state. Both packages
+launched successfully, though their launch delay remains an optimization
+target.
