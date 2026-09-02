@@ -492,6 +492,52 @@ pub extern "C" fn pjs_core_set_persistence_diagnostic(
 }
 
 #[no_mangle]
+pub extern "C" fn pjs_core_set_lineage_diagnostic(
+    mode: u32,
+    source: u32,
+    generation: u32,
+    error: u32,
+) {
+    let Some(state) = (unsafe { STATE.as_mut() }) else {
+        return;
+    };
+    let mut text = String::with_capacity(16);
+    if mode >= 4 {
+        text.push_str("LINE E");
+        push_fixed_decimal(&mut text, error, &[10, 1]);
+        set_boot_diagnostic_text(state, &text, abgr(150, 20, 38, 255));
+        return;
+    }
+    text.push_str(match mode {
+        0 => "ACPT ",
+        1 => "ROLL ",
+        2 => "KEEP ",
+        _ => "CRSH ",
+    });
+    text.push(match source {
+        1 => 'P',
+        2 => 'A',
+        3 => 'L',
+        4 => 'D',
+        5 => 'E',
+        _ => 'X',
+    });
+    text.push_str(" G");
+    push_fixed_decimal(
+        &mut text,
+        generation,
+        &[10_000, 1_000, 100, 10, 1],
+    );
+    let color = match mode {
+        0 => abgr(16, 112, 72, 255),
+        1 => abgr(142, 75, 0, 255),
+        2 => abgr(0, 92, 110, 255),
+        _ => abgr(150, 20, 38, 255),
+    };
+    set_boot_diagnostic_text(state, &text, color);
+}
+
+#[no_mangle]
 pub extern "C" fn pjs_core_init() -> i32 {
     unsafe {
         if !STATE.is_null() {

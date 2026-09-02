@@ -22,11 +22,13 @@ POWER_TELEMETRY ?= 1
 CACHE_ENABLE ?= 1
 QUICKJS_RUNTIME ?= 1
 PERSISTENCE_GATE ?= 0
+LINEAGE_GATE ?= 0
 DEFINES := -DPJS_A1099_LCD_TYPE=$(LCD_TYPE) -DPJS_BOOTLOADER_HANDOFF=$(HANDOFF_SIGNATURE) \
            -DPJS_PHASE1_POWER_TELEMETRY=$(POWER_TELEMETRY) \
            -DPJS_PHASE1_CACHE_ENABLE=$(CACHE_ENABLE) \
            -DPJS_PHASE1_QUICKJS=$(QUICKJS_RUNTIME) \
            -DPJS_PHASE1_PERSISTENCE_GATE=$(PERSISTENCE_GATE)
+DEFINES += -DPJS_PHASE1_LINEAGE_GATE=$(LINEAGE_GATE)
 CFLAGS := $(COMMON) -std=c11 $(DEFINES)
 ASFLAGS := $(COMMON) $(DEFINES)
 VERIFY_POWER := $(if $(filter 1,$(POWER_TELEMETRY)),--require-power-telemetry,)
@@ -68,7 +70,7 @@ NEWLIB_LIBS := $(NEWLIB_LIBC) $(NEWLIB_LIBM) $(NEWLIB_LIBGCC)
 COMMON_SOURCES := src/lcd.c src/input.c src/backlight.c src/timer.c src/panic.c src/mem.c
 PHASE1_SOURCES := src/main_phase1.c src/irq.c src/scheduler.c src/timer_irq.c \
                   src/heap.c src/cache.c src/power.c src/fat32.c src/storage.c \
-                  src/state_record.c
+                  src/state_record.c src/lineage_record.c
 ifeq ($(QUICKJS_RUNTIME),1)
 RUNTIME_SOURCES := src/qjs_runtime.c src/libc_shim.c
 RUNTIME_DEP := $(QUICKJS_STAMP) $(QUICKJS_OBJECTS) $(NEWLIB_LIBS)
@@ -254,7 +256,8 @@ test: runtime-hold-contract $(QJS_HOST_TEST)
 	  tests/test_damage_abi.c -o $(BUILD)/host/test-damage-abi
 	$(BUILD)/host/test-damage-abi
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -DPJS_HOST_TEST -Iinclude \
-	  tests/test_fat32.c src/fat32.c src/state_record.c -o $(BUILD)/host/test-fat32
+	  tests/test_fat32.c src/fat32.c src/state_record.c src/lineage_record.c \
+	  -o $(BUILD)/host/test-fat32
 	$(BUILD)/host/test-fat32
 	$(PYTHON) tests/test_embedded_pocket.py
 ifeq ($(QUICKJS_RUNTIME),1)

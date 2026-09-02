@@ -302,6 +302,98 @@ int pjs_storage_state_write(PjsPersistenceState *state, bool publish,
     return rc;
 }
 
+int pjs_storage_lineage_load(PjsLineageState *state)
+{
+    if (state == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    *state = (PjsLineageState){0};
+    state_lbas_ready = false;
+    ata_prepare();
+    PjsFat32 fat = {0};
+    int rc = pjs_fat32_mount(&fat, ata_read_sector, 0);
+    if (rc == PJS_STORAGE_OK) rc = resolve_state_lbas(&fat);
+    if (rc != PJS_STORAGE_OK) {
+        state->error = (uint32_t)(-rc);
+        return rc;
+    }
+
+    bool valid[2] = {false, false};
+    PjsLineageRecord records[2] = {{0}, {0}};
+    uint8_t sector[PJS_STORAGE_SECTOR_BYTES];
+    for (uint32_t slot = 0u; slot < 2u; ++slot) {
+        if (!ata_read_sector(0, state_lbas[slot], sector)) {
+            state->error = (uint32_t)(-PJS_STORAGE_ERR_ATA);
+            return PJS_STORAGE_ERR_ATA;
+        }
+        valid[slot] = pjs_lineage_record_read(sector, &records[slot]);
+    }
+    if (!valid[0] && !valid[1]) {
+        state->error = (uint32_t)(-PJS_STORAGE_ERR_STATE);
+        return PJS_STORAGE_ERR_STATE;
+    }
+    uint32_t selected = valid[1] &&
+        (!valid[0] || generation_after(
+            records[1].generation, records[0].generation)) ? 1u : 0u;
+    state->available = 1u;
+    state->active_slot = selected;
+    state->record = records[selected];
+    return PJS_STORAGE_OK;
+}
+
+static int lineage_write_bounded(PjsLineageState *state,
+                                 const PjsLineageRecord *requested)
+{
+    if (state == 0 || requested == 0 || state->available == 0u ||
+        !state_lbas_ready) return PJS_STORAGE_ERR_ARGUMENT;
+    uint32_t slot = state->active_slot ^ 1u;
+    PjsLineageRecord next = *requested;
+    next.generation = state->record.generation + 1u;
+    uint8_t record[PJS_STORAGE_SECTOR_BYTES];
+    uint8_t readback[PJS_STORAGE_SECTOR_BYTES];
+    pjs_lineage_record_build(record, &next, false);
+    if (!ata_write_sector(state_lbas[slot], record) ||
+        !ata_read_sector(0, state_lbas[slot], readback)) {
+        state->error = (uint32_t)(-PJS_STORAGE_ERR_ATA);
+        return PJS_STORAGE_ERR_ATA;
+    }
+    if (!sectors_equal(record, readback)) {
+        state->error = (uint32_t)(-PJS_STORAGE_ERR_VERIFY);
+        return PJS_STORAGE_ERR_VERIFY;
+    }
+    pjs_lineage_record_build(record, &next, true);
+    if (!ata_write_sector(state_lbas[slot], record) ||
+        !ata_read_sector(0, state_lbas[slot], readback)) {
+        state->error = (uint32_t)(-PJS_STORAGE_ERR_ATA);
+        return PJS_STORAGE_ERR_ATA;
+    }
+    PjsLineageRecord verified = {0};
+    if (!sectors_equal(record, readback) ||
+        !pjs_lineage_record_read(readback, &verified) ||
+        verified.generation != next.generation) {
+        state->error = (uint32_t)(-PJS_STORAGE_ERR_VERIFY);
+        return PJS_STORAGE_ERR_VERIFY;
+    }
+    state->active_slot = slot;
+    state->record = verified;
+    state->error = 0u;
+    return PJS_STORAGE_OK;
+}
+
+int pjs_storage_lineage_write(PjsLineageState *state,
+                              const PjsLineageRecord *record)
+{
+    ata_prepare();
+    ata_transaction_active = true;
+    ata_transaction_deadline = timer_now_us() + ATA_STATE_TRANSACTION_TIMEOUT_US;
+    int rc = lineage_write_bounded(state, record);
+    if (rc == PJS_STORAGE_OK &&
+        (int32_t)(timer_now_us() - ata_transaction_deadline) >= 0) {
+        state->error = (uint32_t)(-PJS_STORAGE_ERR_ATA);
+        rc = PJS_STORAGE_ERR_ATA;
+    }
+    ata_transaction_active = false;
+    return rc;
+}
+
 void pjs_storage_reset_diagnostics(void)
 {
     storage_error = 0u;

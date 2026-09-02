@@ -1,0 +1,19 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.ipod-photo-lineage-trial",
+  "name": "pocketjs-ipod-photo-lineage-trial",
+  "title": "PocketJS: Lineage Trial",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": { "requires": ["text.glyphs.baked", "input.buttons"] }
+  },
+  "app": {
+    "entry": "apps/ipod-photo-lineage/trial-main.tsx",
+    "output": "ipod-photo-lineage-trial-main",
+    "framework": "solid",
+    "viewport": {
+      "fixed": { "logical": [220, 176], "presentation": "native" }
+    }
+  }
+}

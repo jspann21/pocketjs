@@ -1,0 +1,7 @@
+Boot 1 / BETA: ACPT P G00003
+After center: CRSH P G00004
+Boot 2 / ALPHA: ROLL A G00006
+Boot 3 / ALPHA: KEEP A G00009
+RESTORE VERIFIED: YES/NO
+Rockbox booted after restore: YES/NO
+Unexpected: none

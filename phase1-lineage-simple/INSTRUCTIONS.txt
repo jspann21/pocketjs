@@ -1,0 +1,36 @@
+POCKETJS IPOD PHOTO - PACKAGE LINEAGE AND ROLLBACK GATE
+
+This is one install and three boots. Do not reconnect between boots.
+
+1. Restore Rockbox first if an older PocketJS test is installed.
+2. Connect the iPod in disk mode. Confirm it is F:\ (or pass another drive).
+3. Open PowerShell in this folder and run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+4. Safely eject and boot. Confirm BETA launches and record the top-right line.
+5. Press center once. Wait for and record the new top-right line.
+6. Hold Menu+Play for two seconds to reboot. Confirm ALPHA launches and record
+   the top-right line.
+7. Hold Menu+Play for two seconds again. Confirm ALPHA launches and record the
+   final top-right line.
+8. Reconnect in disk mode and run:
+
+   .\RESTORE.ps1
+
+9. Safely eject and confirm normal Rockbox boot.
+
+Expected lines, in order:
+
+   ACPT P G00003
+   CRSH P G00004
+   ROLL A G00006
+   KEEP A G00009
+
+Any LINE E## line, missing app, or different generation is a failure. Stop,
+reconnect in disk mode, and run .\RESTORE.ps1. Do not repeat earlier launcher,
+rectangle, heartbeat, Hold, power, ordinary-app, or persistence observations.
+
+Return RESULTS.txt, INSTALL-STATUS.json, and RESTORE-STATUS.json. Send one photo
+only if a line is missing or unreadable.

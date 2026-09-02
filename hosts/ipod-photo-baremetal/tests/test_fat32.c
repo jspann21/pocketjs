@@ -93,6 +93,27 @@ int main(void) {
     assert(generation==17u && payload==23u);
     record[100]^=0x80u;
     assert(!pjs_state_record_read(record,&generation,&payload));
+    PjsLineageRecord lineage={
+        .generation=8u,
+        .phase=PJS_LINEAGE_PHASE_TRIAL,
+        .active_source=2u,
+        .active_hash_low=0x11223344u,
+        .active_hash_high=0x55667788u,
+        .last_good_source=5u,
+        .trial_source=1u,
+        .trial_hash_low=0xabcdef01u,
+        .trial_hash_high=0x23456789u,
+    };
+    PjsLineageRecord decoded={0};
+    pjs_lineage_record_build(record,&lineage,false);
+    assert(!pjs_lineage_record_read(record,&decoded));
+    pjs_lineage_record_build(record,&lineage,true);
+    assert(pjs_lineage_record_read(record,&decoded));
+    assert(decoded.generation==8u && decoded.phase==PJS_LINEAGE_PHASE_TRIAL &&
+           decoded.active_hash_high==0x55667788u &&
+           decoded.trial_hash_low==0xabcdef01u);
+    record[90]^=1u;
+    assert(!pjs_lineage_record_read(record,&decoded));
     puts("fat32 fragmented multi-cluster loader: OK");
     return 0;
 }

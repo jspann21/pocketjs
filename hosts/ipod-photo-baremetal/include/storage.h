@@ -63,6 +63,37 @@ typedef struct {
     uint32_t error;
 } PjsPersistenceState;
 
+#define PJS_LINEAGE_PHASE_ACTIVE 1u
+#define PJS_LINEAGE_PHASE_TRIAL 2u
+#define PJS_LINEAGE_PHASE_RUNNING 3u
+#define PJS_LINEAGE_PHASE_CRASHED 4u
+
+typedef struct {
+    uint32_t generation;
+    uint32_t phase;
+    uint32_t active_source;
+    uint32_t active_hash_low;
+    uint32_t active_hash_high;
+    uint32_t last_good_source;
+    uint32_t last_good_hash_low;
+    uint32_t last_good_hash_high;
+    uint32_t trial_source;
+    uint32_t trial_hash_low;
+    uint32_t trial_hash_high;
+    uint32_t rejected_source;
+    uint32_t rejected_hash_low;
+    uint32_t rejected_hash_high;
+    uint32_t failure_stage;
+    uint32_t failure_code;
+} PjsLineageRecord;
+
+typedef struct {
+    uint32_t available;
+    uint32_t active_slot;
+    uint32_t error;
+    PjsLineageRecord record;
+} PjsLineageState;
+
 int pjs_fat32_mount(PjsFat32 *fat, PjsSectorReadFn reader, void *context);
 int pjs_fat32_find_short_directory(PjsFat32 *fat, uint32_t parent_cluster,
                                    const char directory_name[11],
@@ -99,6 +130,11 @@ void pjs_state_record_build(uint8_t record[PJS_STORAGE_SECTOR_BYTES],
 bool pjs_state_record_read(const uint8_t record[PJS_STORAGE_SECTOR_BYTES],
                            uint32_t *generation_out,
                            uint32_t *payload_out);
+void pjs_lineage_record_build(uint8_t record[PJS_STORAGE_SECTOR_BYTES],
+                              const PjsLineageRecord *lineage,
+                              bool committed);
+bool pjs_lineage_record_read(const uint8_t record[PJS_STORAGE_SECTOR_BYTES],
+                             PjsLineageRecord *lineage_out);
 
 int pjs_storage_load_guest(PjsStorageFile *file);
 void pjs_storage_reset_diagnostics(void);
@@ -114,5 +150,8 @@ int pjs_storage_state_load(PjsPersistenceState *state);
 int pjs_storage_state_write(PjsPersistenceState *state, bool publish,
                             uint32_t *attempted_slot,
                             uint32_t *attempted_generation);
+int pjs_storage_lineage_load(PjsLineageState *state);
+int pjs_storage_lineage_write(PjsLineageState *state,
+                              const PjsLineageRecord *record);
 
 #endif

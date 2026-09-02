@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "status": "awaiting-hardware",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-lineage.ipod",
+    "bytes": 1094932,
+    "sha256": "9fce741604fe5d7b79506d8de73cf9794a54ae8b1f540d552031b1a21f991e71"
+  },
+  "packages": [
+    {
+      "file": "ACTIVE.PKT",
+      "role": "known-good Alpha app",
+      "bytes": 214056,
+      "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+      "packageHashFnv64": "0x23c3105ac6587d16"
+    },
+    {
+      "file": "PENDING.PKT",
+      "role": "Beta trial with deliberate center-button watchdog fault",
+      "bytes": 214360,
+      "sha256": "b58d7cbeae0545cfaa5e0de3c9028ca18d98d3b4dd841f1f5934a0f3e298a58c",
+      "packageHashFnv64": "0x8ab6cfcd9bbe58dc"
+    }
+  ],
+  "stateSlots": [
+    {
+      "file": "STATE0.BIN",
+      "bytes": 512,
+      "generation": 1,
+      "phase": "ACTIVE",
+      "committed": true,
+      "sha256": "1b82ac80abc8cbea1b3777f0ade19795a398d1730f00b2ab0614443a2083b4ac"
+    },
+    {
+      "file": "STATE1.BIN",
+      "bytes": 512,
+      "generation": 0,
+      "phase": "ACTIVE",
+      "committed": false,
+      "sha256": "5721fb6065c6f602f5e77a4e5949573e95600d7d5e9542b05ec8e56cd66ebb17"
+    }
+  ],
+  "expectedDeviceEvidence": [
+    "ACPT P G00003",
+    "CRSH P G00004",
+    "ROLL A G00006",
+    "KEEP A G00009"
+  ],
+  "checks": [
+    "TypeScript no-emit check",
+    "ARMv4T Rust plus QuickJS firmware build",
+    "static and Phase 1 image verification",
+    "host QuickJS generated guest",
+    "default non-lineage C smoke build",
+    "FAT32 fragmented multi-cluster loader",
+    "committed, uncommitted, and corrupt lineage-record parsing",
+    "package inspection and verification",
+    "PowerShell package/state/Rockbox backup-stage-restore mock round trip"
+  ],
+  "scope": "No package file or FAT metadata writes; physical power interruption remains unqualified."
+}

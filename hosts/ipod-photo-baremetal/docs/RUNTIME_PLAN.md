@@ -58,10 +58,11 @@ packaging, and reproducible firmware evidence.
 - first-retired-frame acceptance before committing an updated package;
 - crash lineage and rollback.
 
-The first item has a bounded hardware candidate documented in
-`PHASE1_PERSISTENCE.md`. It writes only the data sectors of two exact,
-preallocated 512-byte files; the remaining Gate 4 items are not implied by
-that candidate.
+The confined state writer is hardware-qualified in `PHASE1_PERSISTENCE.md`.
+The first-presented-frame acceptance, crash lineage, rejected-hash quarantine,
+and rollback campaign is documented in `PHASE1_LINEAGE.md`. It uses those same
+two exact preallocated sectors and does not write packages or FAT metadata.
+Physical power interruption remains a separate, unqualified boundary.
 
 ### 5. Optional capabilities
 
