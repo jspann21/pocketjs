@@ -454,6 +454,44 @@ pub extern "C" fn pjs_core_set_app_diagnostic(selected: u32, count: u32, sector_
 }
 
 #[no_mangle]
+pub extern "C" fn pjs_core_set_persistence_diagnostic(
+    mode: u32,
+    slot: u32,
+    generation: u32,
+    error: u32,
+) {
+    let Some(state) = (unsafe { STATE.as_mut() }) else {
+        return;
+    };
+    let mut text = String::with_capacity(16);
+    text.push_str("PERS ");
+    if mode >= 3 {
+        text.push('E');
+        push_fixed_decimal(&mut text, error, &[10, 1]);
+        set_boot_diagnostic_text(state, &text, abgr(150, 20, 38, 255));
+        return;
+    }
+    text.push(match mode {
+        0 => 'L',
+        1 => 'C',
+        _ => 'A',
+    });
+    text.push(char::from(b'0' + slot.min(1) as u8));
+    text.push_str(" G");
+    push_fixed_decimal(
+        &mut text,
+        generation,
+        &[10_000, 1_000, 100, 10, 1],
+    );
+    let color = match mode {
+        0 => abgr(0, 92, 110, 255),
+        1 => abgr(16, 112, 72, 255),
+        _ => abgr(142, 75, 0, 255),
+    };
+    set_boot_diagnostic_text(state, &text, color);
+}
+
+#[no_mangle]
 pub extern "C" fn pjs_core_init() -> i32 {
     unsafe {
         if !STATE.is_null() {

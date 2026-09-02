@@ -58,6 +58,11 @@ packaging, and reproducible firmware evidence.
 - first-retired-frame acceptance before committing an updated package;
 - crash lineage and rollback.
 
+The first item has a bounded hardware candidate documented in
+`PHASE1_PERSISTENCE.md`. It writes only the data sectors of two exact,
+preallocated 512-byte files; the remaining Gate 4 items are not implied by
+that candidate.
+
 ### 5. Optional capabilities
 
 Audio, writable per-app filesystem, USB transport, and networking remain absent

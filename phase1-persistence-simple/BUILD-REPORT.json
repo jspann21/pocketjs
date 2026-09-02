@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "status": "host-verified; hardware pending",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-persistence.ipod",
+    "bytes": 1123116,
+    "sha256": "8c5eea4d49e907cb09f88d6cce8ddd2ae00562c5004c274d83c0492f95b4b510"
+  },
+  "app": {
+    "file": "APP.PKT",
+    "bytes": 241160,
+    "sha256": "09985ef7e8291a940c458bbf649176cf96f78afd8c45652d5ce2036b0ae6e04e"
+  },
+  "stateSlots": [
+    {
+      "file": "STATE0.BIN",
+      "bytes": 512,
+      "generation": 1,
+      "committed": true,
+      "sha256": "8d4a601eff6dab73e9c93dbf882e7a0334a758029f922de6fecfb860c549c7d4"
+    },
+    {
+      "file": "STATE1.BIN",
+      "bytes": 512,
+      "generation": 0,
+      "committed": false,
+      "sha256": "ff246981fd6cb3a2b0bf95442868dd64add6ef07943be6f4fd057fd7f16c466b"
+    }
+  ],
+  "expectedDeviceEvidence": [
+    "PERS L0 G00001",
+    "PERS C1 G00002",
+    "PERS L1 G00002",
+    "PERS A0 G00003",
+    "PERS L1 G00002"
+  ],
+  "checks": [
+    "ARMv4T Rust plus QuickJS firmware build",
+    "static and Phase 1 image verification",
+    "host QuickJS generated guest",
+    "FAT32 fixed-file LBA confinement",
+    "committed, uncommitted, and corrupt CRC record parsing",
+    "PowerShell APP.PKT/state-slot/Rockbox backup-stage-restore mock round trip"
+  ]
+}

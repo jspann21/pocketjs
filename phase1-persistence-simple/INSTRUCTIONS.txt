@@ -1,0 +1,36 @@
+POCKETJS IPOD PHOTO - CONFINED PERSISTENCE GATE
+
+This is one install and three boots. Do not reconnect between boots.
+
+1. Restore Rockbox first if an older PocketJS test is installed.
+2. Connect the iPod in disk mode. Confirm it is F:\ (or pass another drive).
+3. Open PowerShell in this folder and run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+4. Safely eject and boot. Record the single top-right PERS line.
+5. Press center once. Record the new PERS line.
+6. Hold Menu+Play for two seconds to reboot. Record the PERS line.
+7. Press Play once by itself. Record the new PERS line.
+8. Hold Menu+Play for two seconds to reboot. Record the final PERS line.
+9. Reconnect in disk mode and run:
+
+   .\RESTORE.ps1
+
+10. Safely eject and confirm normal Rockbox boot.
+
+Expected lines, in order:
+
+   PERS L0 G00001
+   PERS C1 G00002
+   PERS L1 G00002
+   PERS A0 G00003
+   PERS L1 G00002
+
+Any PERS E## line is a failure. Stop testing, reconnect in disk mode, and run
+.\RESTORE.ps1. Do not repeat prior launcher, rectangle, heartbeat, Hold, power,
+or ordinary-app observations.
+
+Return RESULTS.txt, INSTALL-STATUS.json, and RESTORE-STATUS.json. Send one photo
+only if a line is missing or unreadable.

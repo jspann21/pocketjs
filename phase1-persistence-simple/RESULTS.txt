@@ -1,0 +1,8 @@
+Boot 1: PERS __________________
+After center: PERS __________________
+Boot 2: PERS __________________
+After Play: PERS __________________
+Boot 3: PERS __________________
+RESTORE VERIFIED: NOT RUN
+Rockbox booted after restore: NOT RUN
+Unexpected: none

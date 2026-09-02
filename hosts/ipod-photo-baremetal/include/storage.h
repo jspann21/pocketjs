@@ -20,6 +20,8 @@
 #define PJS_STORAGE_ERR_ALLOC -8
 #define PJS_STORAGE_ERR_SHORT_READ -9
 #define PJS_STORAGE_ERR_TOO_MANY -10
+#define PJS_STORAGE_ERR_STATE -11
+#define PJS_STORAGE_ERR_VERIFY -12
 
 typedef bool (*PjsSectorReadFn)(void *context, uint32_t lba,
                                 uint8_t sector[PJS_STORAGE_SECTOR_BYTES]);
@@ -53,6 +55,14 @@ typedef struct {
     uint32_t count;
 } PjsStorageCatalog;
 
+typedef struct {
+    uint32_t available;
+    uint32_t active_slot;
+    uint32_t generation;
+    uint32_t payload;
+    uint32_t error;
+} PjsPersistenceState;
+
 int pjs_fat32_mount(PjsFat32 *fat, PjsSectorReadFn reader, void *context);
 int pjs_fat32_find_short_directory(PjsFat32 *fat, uint32_t parent_cluster,
                                    const char directory_name[11],
@@ -77,6 +87,18 @@ int pjs_fat32_read_short_file(PjsFat32 *fat,
                               const char file_name[11],
                               uint8_t *destination, uint32_t capacity,
                               uint32_t *length_out);
+int pjs_fat32_short_file_sector(PjsFat32 *fat,
+                                const char directory_name[11],
+                                const char file_name[11],
+                                uint32_t expected_size,
+                                uint32_t *lba_out);
+
+void pjs_state_record_build(uint8_t record[PJS_STORAGE_SECTOR_BYTES],
+                            uint32_t generation, uint32_t payload,
+                            bool committed);
+bool pjs_state_record_read(const uint8_t record[PJS_STORAGE_SECTOR_BYTES],
+                           uint32_t *generation_out,
+                           uint32_t *payload_out);
 
 int pjs_storage_load_guest(PjsStorageFile *file);
 void pjs_storage_reset_diagnostics(void);
@@ -88,5 +110,9 @@ void pjs_storage_release(PjsStorageFile *file);
 uint32_t pjs_storage_last_error(void);
 uint32_t pjs_storage_sector_read_count(void);
 uint32_t pjs_storage_first_failed_lba(void);
+int pjs_storage_state_load(PjsPersistenceState *state);
+int pjs_storage_state_write(PjsPersistenceState *state, bool publish,
+                            uint32_t *attempted_slot,
+                            uint32_t *attempted_generation);
 
 #endif

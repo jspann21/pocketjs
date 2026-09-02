@@ -23,6 +23,10 @@
 #define PJS_PHASE1_CACHE_ENABLE 1
 #endif
 
+#ifndef PJS_PHASE1_PERSISTENCE_GATE
+#define PJS_PHASE1_PERSISTENCE_GATE 0
+#endif
+
 #define PJS_PHASE1_PLACEHOLDER_BATTERY_MV 3800u
 #define PJS_WHEEL_DELTA_LIMIT 127
 #define PJS_LAUNCHER_PACKAGE_HASH_LOW 0x901119b9u
@@ -402,6 +406,17 @@ void kernel_main_phase1(void)
                                      boot_failure_code,
                                      pjs_storage_sector_read_count());
     }
+#if PJS_PHASE1_PERSISTENCE_GATE
+    PjsPersistenceState persistence = {0};
+    int32_t persistence_result = pjs_storage_state_load(&persistence);
+    if (persistence_result == PJS_STORAGE_OK) {
+        pjs_core_set_persistence_diagnostic(
+            0u, persistence.active_slot, persistence.generation, 0u);
+    } else {
+        pjs_core_set_persistence_diagnostic(
+            3u, 0u, 0u, error_magnitude(persistence_result));
+    }
+#endif
     if (pjs_core_step(&initial_input) < 0) panic_code(0x50314332u); /* P1C2 */
     uint32_t last_frame_us = render_and_present();
 
@@ -425,11 +440,46 @@ void kernel_main_phase1(void)
     uint32_t next_power_sample = now + 1000000u;
 #endif
     uint32_t next_present = now;
+#if PJS_PHASE1_PERSISTENCE_GATE
+    uint32_t previous_buttons = input.buttons;
+#endif
 
     for (;;) {
         /* This path remains hot while no frame is required. It samples input
          * continuously and preserves wheel motion until the next fixed step. */
         input_poll(&input);
+#if PJS_PHASE1_PERSISTENCE_GATE
+        uint32_t pressed = input.buttons & ~previous_buttons;
+        previous_buttons = input.buttons;
+        if (persistence.available != 0u &&
+            (pressed & PJS_BUTTON_SELECT) != 0u) {
+            uint32_t slot = 0u;
+            uint32_t generation = 0u;
+            int32_t result = pjs_storage_state_write(
+                &persistence, true, &slot, &generation);
+            if (result == PJS_STORAGE_OK) {
+                pjs_core_set_persistence_diagnostic(
+                    1u, slot, generation, 0u);
+            } else {
+                pjs_core_set_persistence_diagnostic(
+                    3u, slot, generation, error_magnitude(result));
+            }
+        } else if (persistence.available != 0u &&
+                   (pressed & PJS_BUTTON_PLAY) != 0u &&
+                   (input.buttons & PJS_BUTTON_MENU) == 0u) {
+            uint32_t slot = 0u;
+            uint32_t generation = 0u;
+            int32_t result = pjs_storage_state_write(
+                &persistence, false, &slot, &generation);
+            if (result == PJS_STORAGE_OK) {
+                pjs_core_set_persistence_diagnostic(
+                    2u, slot, generation, 0u);
+            } else {
+                pjs_core_set_persistence_diagnostic(
+                    3u, slot, generation, error_magnitude(result));
+            }
+        }
+#endif
         pending_wheel_delta = clamp_wheel_delta(
             pending_wheel_delta + (int32_t)input.wheel_delta);
         now = timer_now_us();

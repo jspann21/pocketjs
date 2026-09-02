@@ -100,6 +100,9 @@ void pjs_core_set_boot_diagnostic(uint32_t source, uint32_t failure_stage,
                                   uint32_t sector_reads);
 void pjs_core_set_app_diagnostic(uint32_t selected, uint32_t count,
                                  uint32_t sector_reads);
+void pjs_core_set_persistence_diagnostic(uint32_t mode, uint32_t slot,
+                                         uint32_t generation,
+                                         uint32_t error);
 
 int32_t pjs_package_open_ipod_photo(const uint8_t *bytes, uint32_t length,
                                     PjsGuestPackage *guest);

@@ -42,6 +42,15 @@ void pjs_core_set_app_diagnostic(uint32_t selected, uint32_t count,
     (void)count;
     (void)sector_reads;
 }
+void pjs_core_set_persistence_diagnostic(uint32_t mode, uint32_t slot,
+                                         uint32_t generation,
+                                         uint32_t error)
+{
+    (void)mode;
+    (void)slot;
+    (void)generation;
+    (void)error;
+}
 void pjs_core_shutdown(void) {}
 
 int32_t pjs_package_open_ipod_photo(const uint8_t *bytes, uint32_t length,
