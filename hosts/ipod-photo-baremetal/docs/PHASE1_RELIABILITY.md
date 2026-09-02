@@ -47,3 +47,15 @@ clean reboot while the malformed pending file remained rejected.
 
 This batch does not qualify arbitrary writable files, host-side package
 promotion, physical power interruption, disk-mode entry, or PMU standby.
+
+## Qualification
+
+The exact candidate was physically qualified with all four expected lines.
+The invalid pending plan was rejected, the active Beta package passed memory
+admission, its deliberate QuickJS frame failure recovered immediately into
+the responsive embedded Alpha package, and the next two boots rolled back to
+and retained `LASTGOOD.PKT`. No `LINE E##` or `MEMG` failure appeared.
+
+The verified restore returned Rockbox to SHA-256
+`18478db8dce8666491a411ba297c9abf99fd4096547f7765d830b04326dc3bc4`
+with no backup, handoff state, or lineage transaction remaining.

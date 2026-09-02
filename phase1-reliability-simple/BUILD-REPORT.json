@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "host-verified; hardware-pending",
+  "status": "hardware-qualified",
   "candidate": {
     "file": "pocketjs-a1099-phase1-reliability.ipod",
     "bytes": 1100516,
@@ -53,6 +53,20 @@
     "ROLL L G00006",
     "KEEP L G00009"
   ],
+  "observedDeviceEvidence": [
+    "SAFE A G00003",
+    "RECV E G00004",
+    "ROLL L G00006",
+    "KEEP L G00009",
+    "embedded recovery remained responsive"
+  ],
+  "restore": {
+    "verified": true,
+    "restoredRockboxSha256": "18478db8dce8666491a411ba297c9abf99fd4096547f7765d830b04326dc3bc4",
+    "backupExistsAfterRestore": false,
+    "handoffStateExistsAfterRestore": false,
+    "lineageTransactionExistsAfterRestore": false
+  },
   "checks": [
     "TypeScript no-emit check",
     "127 existing pocketjs-core tests",
