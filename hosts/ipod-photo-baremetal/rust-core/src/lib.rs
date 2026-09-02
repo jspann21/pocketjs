@@ -599,6 +599,17 @@ pub extern "C" fn pjs_core_set_kernel_diagnostic(mode: u32, error: u32) {
             push_fixed_decimal(&mut output, error, &[10, 1]);
             (output, abgr(150, 20, 38, 255))
         }
+        27 => (String::from("STR PLAY"), abgr(16, 112, 72, 255)),
+        28 => (String::from("STR PAUSE"), abgr(142, 75, 0, 255)),
+        29 => (String::from("STR GAP"), abgr(142, 75, 0, 255)),
+        30 => (String::from("STR DRAIN"), abgr(0, 92, 110, 255)),
+        31 => (String::from("STR PASS"), abgr(16, 112, 72, 255)),
+        32 => (String::from("STR STOP"), abgr(0, 92, 110, 255)),
+        33 => {
+            let mut output = String::from("STR E");
+            push_fixed_decimal(&mut output, error, &[10, 1]);
+            (output, abgr(150, 20, 38, 255))
+        }
         _ => {
             let mut output = String::from("KERN E");
             push_fixed_decimal(&mut output, error, &[10, 1]);

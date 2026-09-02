@@ -1,5 +1,8 @@
 #include "backlight.h"
 #include "audio.h"
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+#include "audio_stream_gate.h"
+#endif
 #include "cache.h"
 #include "core_bridge.h"
 #include "heap.h"
@@ -46,6 +49,14 @@
 
 #ifndef PJS_PHASE1_AUDIO_GATE
 #define PJS_PHASE1_AUDIO_GATE 0
+#endif
+
+#ifndef PJS_PHASE1_AUDIO_STREAM_GATE
+#define PJS_PHASE1_AUDIO_STREAM_GATE 0
+#endif
+
+#if PJS_PHASE1_AUDIO_STREAM_GATE && !PJS_PHASE1_AUDIO_GATE
+#error "The native audio stream gate requires the audio ownership gate"
 #endif
 
 #if PJS_PHASE1_RELIABILITY_GATE && !PJS_PHASE1_LINEAGE_GATE
@@ -244,12 +255,18 @@ static PjsCoreInput core_input(const PjsInputState *input,
 
 static uint32_t render_and_present(void)
 {
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+    pjs_audio_stream_gate_refill();
+#endif
     uint32_t started = timer_now_us();
     last_presented_damage_area = 0u;
     PjsCoreDamagePlan damage = {0};
     if (pjs_core_render_damage(framebuffer, (uint32_t)PJS_FRAME_PIXELS, &damage) != 0) {
         panic_code(0x50314333u); /* P1C3 */
     }
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+    pjs_audio_stream_gate_refill();
+#endif
     if (damage.count != 0u) {
         /* LCD transfer is programmed CPU I/O, not memory DMA. The CPU reads
          * cached framebuffer pixels and copies them into the bridge, so no
@@ -354,6 +371,14 @@ static bool kernel_suspend(PjsPowerLifecycle *lifecycle,
      * fault is diagnostic only; the audio module always disables its FIFO and
      * the lifecycle can still take the safe storage path. */
 #if PJS_PHASE1_AUDIO_GATE
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+    if (pjs_audio_stream_gate_active()) {
+        int result = pjs_audio_stream_gate_cancel();
+        uint32_t mode, error;
+        (void)pjs_audio_stream_gate_status(&mode, &error);
+        if (result != 0) return false;
+    }
+#endif
     if (audio != 0) (void)pjs_audio_stop(audio);
 #endif
     PjsLcdClockState clock_state = {0};
@@ -401,6 +426,14 @@ static bool kernel_shutdown_storage(PjsLineageState *lineage,
 {
     /* No storage command is issued while the codec can still be clocking. */
 #if PJS_PHASE1_AUDIO_GATE
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+    if (pjs_audio_stream_gate_active()) {
+        int result = pjs_audio_stream_gate_cancel();
+        uint32_t mode, error;
+        (void)pjs_audio_stream_gate_status(&mode, &error);
+        if (result != 0) return false;
+    }
+#endif
     if (audio != 0) (void)pjs_audio_stop(audio);
 #endif
     /* The lineage write can dirty the disk cache, so flush only after it is
@@ -949,7 +982,7 @@ void kernel_main_phase1(void)
 #endif
 #endif
 
-#if PJS_PHASE1_AUDIO_GATE
+#if PJS_PHASE1_AUDIO_GATE && !PJS_PHASE1_AUDIO_STREAM_GATE
     int audio_init_result = pjs_audio_init(&audio);
     if (audio_init_result == PJS_AUDIO_RESULT_OK) {
         pjs_core_set_kernel_diagnostic(22u, 0u); /* AUD READY */
@@ -1201,6 +1234,11 @@ void kernel_main_phase1(void)
             lifecycle_source_changed || lifecycle_wake_events != 0u) {
             last_user_activity = now;
         }
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+        /* Active playback is work, not user inactivity. Explicit suspend and
+         * shutdown remain available and cancel the native sink first. */
+        if (pjs_audio_stream_gate_active()) last_user_activity = now;
+#endif
 
         /* A suspended runtime still polls input and source pins, but does not
          * execute guest frames. Any new button edge is the wake request. */
@@ -1210,7 +1248,7 @@ void kernel_main_phase1(void)
                     lcd_tested = true;
                     shutdown_ready = false;
                     pjs_core_set_kernel_diagnostic(14u, 0u);
-#if PJS_PHASE1_AUDIO_GATE
+#if PJS_PHASE1_AUDIO_GATE && !PJS_PHASE1_AUDIO_STREAM_GATE
                     int audio_resume_result = pjs_audio_resume(&audio);
                     if (audio_resume_result != PJS_AUDIO_RESULT_OK) {
                         pjs_core_set_kernel_diagnostic(
@@ -1359,6 +1397,14 @@ void kernel_main_phase1(void)
         } else if (!audio_chord_fired &&
                    (uint32_t)(now - audio_chord_start) >= 1000000u) {
             audio_chord_fired = true;
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+            if (pjs_audio_stream_gate_active())
+                (void)pjs_audio_stream_gate_cancel();
+            else
+                (void)pjs_audio_stream_gate_start(&audio);
+            now = timer_now_us();
+            last_user_activity = now;
+#else
             pjs_core_set_kernel_diagnostic(23u, 0u); /* AUD TONE */
             (void)render_and_present();
             int audio_tone_result = pjs_audio_tone(&audio);
@@ -1369,6 +1415,16 @@ void kernel_main_phase1(void)
                     25u, error_magnitude(audio_tone_result));
             }
             (void)render_and_present();
+#endif
+        }
+#endif
+
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+        if (lifecycle.suspended == 0u) {
+            pjs_audio_stream_gate_tick(timer_now_us());
+            uint32_t stream_mode, stream_error;
+            if (pjs_audio_stream_gate_status(&stream_mode, &stream_error))
+                pjs_core_set_kernel_diagnostic(stream_mode, stream_error);
         }
 #endif
 
@@ -1502,7 +1558,16 @@ void kernel_main_phase1(void)
                                                   last_frame_us,
                                                   runtime_status);
             for (uint32_t step = 0u; step < steps; ++step) {
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+                /* Catch-up batches may contain 32 guest frames. Audio must
+                 * not wait for the entire batch to finish. */
+                pjs_audio_stream_gate_refill();
+#endif
                 if (runtime_active && !qjs_runtime_frame(&frame_input)) {
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+                    if (pjs_audio_stream_gate_active())
+                        (void)pjs_audio_stream_gate_cancel();
+#endif
                     boot_failure_stage = PJS_BOOT_FAILURE_FRAME;
                     boot_failure_code = qjs_runtime_error_code();
                     qjs_runtime_shutdown();
@@ -1559,6 +1624,9 @@ void kernel_main_phase1(void)
                 if (pjs_core_step(&frame_input) < 0) {
                     panic_code(0x50314332u); /* P1C2 */
                 }
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+                pjs_audio_stream_gate_refill();
+#endif
                 /* Wheel motion is an edge-like event. Apply the accumulated
                  * delta once, never once per catch-up simulation step. */
                 frame_input.wheel_delta = 0;

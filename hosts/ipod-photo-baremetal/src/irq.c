@@ -5,6 +5,14 @@
 #include "scheduler.h"
 #include "timer_irq.h"
 
+#ifndef PJS_PHASE1_AUDIO_STREAM_GATE
+#define PJS_PHASE1_AUDIO_STREAM_GATE 0
+#endif
+
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+#include "audio_dma.h"
+#endif
+
 static volatile uint32_t unexpected_low;
 static volatile uint32_t unexpected_high;
 
@@ -56,6 +64,17 @@ void irq_dispatch(void)
         scheduler_irq_advance_us(timer_irq_ack_elapsed_us());
         low &= ~PP_TIMER1_MASK;
     }
+
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+    if ((low & PP_DMA_MASK) != 0u) {
+        /* DMA status is acknowledged by the owner. Keep this path separate
+         * from the legacy unexpected-interrupt latch: a DMA completion is a
+         * normal audio clock event, while a foreign/stale completion is
+         * fail-closed by pjs_audio_dma_irq(). */
+        (void)pjs_audio_dma_irq();
+        low &= ~PP_DMA_MASK;
+    }
+#endif
 
     if (low != 0u) {
         unexpected_low |= low;

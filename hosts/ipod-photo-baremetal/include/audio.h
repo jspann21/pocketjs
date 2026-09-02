@@ -2,6 +2,7 @@
 #define POCKETJS_IPOD_PHOTO_AUDIO_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 enum {
     PJS_AUDIO_OFF = 0u,
@@ -34,5 +35,10 @@ int pjs_audio_init(PjsAudioState *audio);
 int pjs_audio_tone(PjsAudioState *audio);
 int pjs_audio_stop(PjsAudioState *audio);
 int pjs_audio_resume(PjsAudioState *audio);
+
+/* Main-context codec operations for the separately gated native DMA sink.
+ * DMA ownership and queued PCM remain outside this codec driver. */
+int pjs_audio_pcm_prepare(PjsAudioState *audio);
+int pjs_audio_pcm_mute(PjsAudioState *audio, bool muted);
 
 #endif

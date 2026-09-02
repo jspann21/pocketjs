@@ -184,9 +184,11 @@ vector_irq:
     sub lr, lr, #4
     stmdb sp!, {r0-r12, lr}
     mrs r0, spsr
-    stmdb sp!, {r0}
+    /* Preserve an 8-byte C ABI boundary. The register frame is 56 bytes;
+     * saving SPSR as an eight-byte pair keeps SP aligned for irq_dispatch. */
+    stmdb sp!, {r0,r1}
     bl irq_dispatch
-    ldmia sp!, {r0}
+    ldmia sp!, {r0,r1}
     msr spsr_cxsf, r0
     ldmia sp!, {r0-r12, lr}
     movs pc, lr

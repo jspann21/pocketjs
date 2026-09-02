@@ -2,6 +2,9 @@
 #include "platform.h"
 #include "pp5020.h"
 #include "timer.h"
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+#include "audio_stream_gate.h"
+#endif
 
 #ifndef PJS_A1099_LCD_TYPE
 /* M9829/P98 60 GB is the old Color/Photo panel family. Use -1 to probe GPIO. */
@@ -124,6 +127,11 @@ static bool transfer_contiguous(const uint16_t *pixels, uint32_t pixel_count)
     PP_LCD2_BLOCK_CTRL = 0x34000000u;
 
     for (uint32_t index = 0u; index < word_count; ++index) {
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+        /* Display transfer is synchronous CPU work. Keep the native producer
+         * fed every 2 KiB without calling codec, guest, or rendering code. */
+        if ((index & 511u) == 0u) pjs_audio_stream_gate_refill();
+#endif
         if (!wait_block(PP_LCD2_BLOCK_TXOK)) {
             PP_LCD2_BLOCK_CONFIG = 0u;
             return false;

@@ -187,8 +187,17 @@ static bool audio_codec_write(PjsAudioState *audio, uint8_t reg,
 
 static bool audio_codec_open(PjsAudioState *audio)
 {
-    if (!audio_codec_write(audio, WM8975_RESET, 0u) ||
-        !audio_codec_write(audio, WM8975_PWRMGMT1,
+    if (!audio_codec_write(audio, WM8975_RESET, 0u)) return false;
+#if PJS_PHASE1_AUDIO_STREAM_GATE
+    /* Program the low headphone level while output buffers are still off.
+     * Do not expose the reset-default volume during analog power-up. */
+    if (!audio_codec_write(audio, WM8975_DAPCTRL, WM8975_DAC_MUTE) ||
+        !audio_codec_write(audio, WM8975_LOUT1VOL,
+                           0x0080u | WM8975_HEADPHONE_VOLUME) ||
+        !audio_codec_write(audio, WM8975_ROUT1VOL,
+                           0x0180u | WM8975_HEADPHONE_VOLUME)) return false;
+#endif
+    if (!audio_codec_write(audio, WM8975_PWRMGMT1,
                            WM8975_VMID_5K | WM8975_VREF)) {
         return false;
     }
@@ -321,6 +330,32 @@ int pjs_audio_stop(PjsAudioState *audio)
 int pjs_audio_resume(PjsAudioState *audio)
 {
     return pjs_audio_init(audio);
+}
+
+int pjs_audio_pcm_prepare(PjsAudioState *audio)
+{
+    int result = pjs_audio_init(audio);
+    if (result != PJS_AUDIO_RESULT_OK) return result;
+    if (!audio_codec_write(audio, WM8975_DAPCTRL, WM8975_DAC_MUTE)) {
+        (void)pjs_audio_stop(audio);
+        return audio_fail(audio, PJS_AUDIO_RESULT_I2C);
+    }
+    /* Allow the analog reference to settle while muted. DMA then supplies a
+     * separate silence lead-in before unmute, so no live FIFO feed is paused
+     * by codec control traffic. This is a mitigation, not a no-pop guarantee. */
+    timer_delay_us(80000u);
+    return PJS_AUDIO_RESULT_OK;
+}
+
+int pjs_audio_pcm_mute(PjsAudioState *audio, bool muted)
+{
+    if (audio == 0) return PJS_AUDIO_RESULT_ARGUMENT;
+    if (audio->state != PJS_AUDIO_READY) return PJS_AUDIO_RESULT_NOT_READY;
+    if (!audio_codec_write(audio, WM8975_DAPCTRL,
+                           muted ? WM8975_DAC_MUTE : 0u)) {
+        return audio_fail(audio, PJS_AUDIO_RESULT_I2C);
+    }
+    return PJS_AUDIO_RESULT_OK;
 }
 
 int pjs_audio_tone(PjsAudioState *audio)

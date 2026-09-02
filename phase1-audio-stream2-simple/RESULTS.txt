@@ -1,0 +1,22 @@
+NATIVE PCM STREAMING BATCH - REVISION 2 RESULTS
+
+Candidate SHA-256 from INSTALL.ps1:
+Normal boot and no unexpected continuous sound: YES / NO
+Full automatic sequence reached STR PASS: YES / NO (exact final label: )
+Left/right/both-ear notes correct: YES / NO
+Screen/app responds to wheel during playback: YES / NO
+One-second pause and intentional starvation gap behaved as described: YES / NO
+Audio returned after each pause/gap: YES / NO
+Startup crackle versus prior candidate: BETTER / SAME / WORSE / NONE
+Any pause/resume/end click, hiss, distortion, or unintended gaps:
+Repeat chord cancels to STR STOP and silence: YES / NO
+Restart after cancel reaches STR PASS: YES / NO
+Battery suspend during playback stops audio and sleeps screen: YES / NO
+Wake shows RESUME without restarting sound: YES / NO
+Batch after wake reaches STR PASS: YES / NO
+USB-powered batch reaches STR PASS: YES / NO
+LCD WAKE -> SHDN READY -> Menu+Play disk mode: YES / NO
+RESTORE VERIFIED and original Rockbox boots: YES / NO
+Other observations / exact error label:
+
+Return this text plus INSTALL-STATUS.json and RESTORE-STATUS.json.

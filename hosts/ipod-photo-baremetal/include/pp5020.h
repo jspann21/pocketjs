@@ -19,6 +19,7 @@
 #define PP_CPU_INT_EN_STAT   MMIO32(0x60004020u)
 #define PP_CPU_INT_EN        MMIO32(0x60004024u)
 #define PP_CPU_INT_DIS       MMIO32(0x60004028u)
+#define PP_CPU_INT_PRIORITY  MMIO32(0x6000402cu)
 #define PP_COP_INT_DIS       MMIO32(0x60004038u)
 #define PP_INT_FORCED_CLR    MMIO32(0x6000401cu)
 #define PP_CPU_HI_INT_STAT   MMIO32(0x60004100u)
@@ -54,6 +55,39 @@
 #define PP_DEV_LCD   0x04000000u
 #define PP_DEV_IDE0  0x02000000u
 #define PP_INIT_BUTTONS 0x00040000u
+
+/* PP5020 DMA controller. DMA request 2 is the IIS TX pacing request. The
+ * channel command transfers packed stereo words (left in the low halfword,
+ * right in the high halfword) from uncached SDRAM to IISFIFO_WR. */
+#define PP_DMA_IRQ             26u
+#define PP_DMA_MASK            (1u << PP_DMA_IRQ)
+#define PP_DMA_REQ_IIS         2u
+#define PP_DMA_REQ_IIS_MASK    (1u << PP_DMA_REQ_IIS)
+#define PP_DMA_MASTER_CONTROL  MMIO32(0x6000a000u)
+#define PP_DMA_MASTER_STATUS   MMIO32(0x6000a004u)
+#define PP_DMA_REQ_STATUS      MMIO32(0x6000a008u)
+#define PP_DMA_MASTER_ENABLE   (1u << 31)
+
+#define PP_DMA0_CMD            MMIO32(0x6000b000u)
+#define PP_DMA0_STATUS         MMIO32(0x6000b004u)
+#define PP_DMA0_RAM_ADDR       MMIO32(0x6000b010u)
+#define PP_DMA0_FLAGS          MMIO32(0x6000b014u)
+#define PP_DMA0_PER_ADDR       MMIO32(0x6000b018u)
+#define PP_DMA0_INCR           MMIO32(0x6000b01cu)
+
+#define PP_DMA_CMD_SIZE_MASK   0x0000ffffu
+#define PP_DMA_CMD_REQ_ID_POS  16u
+#define PP_DMA_CMD_WAIT_REQ   (1u << 24)
+#define PP_DMA_CMD_SINGLE     (1u << 26)
+#define PP_DMA_CMD_RAM_TO_PER (1u << 27)
+#define PP_DMA_CMD_INTR       (1u << 30)
+#define PP_DMA_CMD_START      (1u << 31)
+#define PP_DMA_STATUS_SIZE_MASK 0x0000ffffu
+#define PP_DMA_STATUS_INTR    (1u << 30)
+#define PP_DMA_STATUS_BUSY    (1u << 31)
+#define PP_DMA_FLAGS_UNK26    (1u << 26)
+#define PP_DMA_INCR_RANGE_FIXED (1u << 16)
+#define PP_DMA_INCR_WIDTH_32BIT (2u << 28)
 
 /* Cache/MMAP. MMAP0 maps SDRAM's native 0x10000000 window to 0x00000000. */
 #define PP_CACHE_PRIORITY   MMIO32(0x60006044u)

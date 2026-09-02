@@ -1,0 +1,56 @@
+POCKETJS IPOD PHOTO - NATIVE PCM STREAMING BATCH, REVISION 2
+
+New candidate, NOT hardware-qualified. The passed short-tone kit is unchanged.
+This revision fixes queue-demand refilling and adds producer service between
+guest frames and during display transfers. The previous early STR E06 remains
+a failure; this revision still enforces the same underrun checks.
+Use a charged iPod and ordinary wired headphones, not an amplifier or dock
+line-out. Start with earpieces away from your ears; disconnect immediately if
+sound is loud or abnormal. Volume is fixed low; the wheel does not change it.
+
+1. In this folder, with the restored iPod in disk mode at F:\, run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+2. Safely eject, disconnect USB, and boot. The normal app and PWR BAT should
+   appear. Connect headphones. Hold Left+Right together for one second, with
+   all other buttons released, then release both completely.
+
+3. Let the approximately eleven-second batch finish. Expect quiet notes
+   alternating LEFT, RIGHT, then BOTH ears, and these labels:
+
+   STR PLAY -> STR PAUSE (one second) -> STR PLAY -> STR GAP (one second)
+   -> STR PLAY -> STR DRAIN -> STR PASS
+
+   The gap is intentional: the producer stops, the queued sound finishes,
+   then silence is output until feeding resumes. STR DRAIN can be brief.
+   During STR PLAY, move the wheel and verify the screen/app still responds.
+   Do not press center or Play during this batch: those retain the LCD and
+   shutdown-preflight controls. Note whether startup crackle is better,
+   unchanged, or worse, and any clicks on pause, resume, or stop.
+
+4. Start again with Left+Right. While playing, release and hold Left+Right
+   again for one second. Expect STR STOP and silence. Release fully. Start
+   once more and let it reach STR PASS. This checks cancel/flush/restart.
+
+5. Start again on battery; during playback hold Menu+Right for two seconds.
+   The screen should suspend and audio stop. Release both, then press one
+   button once to wake. Expect RESUME, with no automatic sound. Start the
+   batch again and let it reach STR PASS.
+
+6. Connect USB, wait for PWR USB, and run one complete batch to STR PASS.
+   Then press center for LCD WAKE and Play for SHDN READY. Hold Menu+Play for
+   two seconds to enter disk mode. When F:\ mounts, run:
+
+   .\RESTORE.ps1
+
+7. Safely eject and confirm original Rockbox boots. Return RESULTS.txt,
+   INSTALL-STATUS.json, and RESTORE-STATUS.json.
+
+STOP on STR E##, AUD E##, KERN E##, continuous/loud noise, frozen display,
+unexpected reboot, or disk error. Record the exact label; do not repeatedly
+retry a fault. STR E01 is codec control, E06 unexpected underrun count,
+E07 retirement/progress, E09 pause preservation; E10 and above are DMA-driver
+faults. For recovery only: Menu+Select hard reset, then Select+Play boot-ROM
+disk mode, followed by RESTORE.ps1. Never write the firmware partition/OSOS.

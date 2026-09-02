@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "status": "hardware-qualified-with-first-tone-crackle",
+  "qualification": {
+    "date": "2026-09-02",
+    "operatorResult": "Everything worked exactly as specified. Small crackle may be better and occurs only on the first tone of the sequence.",
+    "restore": "Treated as restored per the operator's standing instruction",
+    "limitation": "First-tone startup transient remains; no claim of artifact-free audio"
+  },
+  "campaign": "Campaign 4 - Native-clock PCM streaming, revision 2",
+  "baseCommit": "7db0bb8",
+  "sourceState": "Uncommitted native stream batch following qualified audio ownership",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-audio-stream2.ipod",
+    "bytes": 1116680,
+    "sha256": "c3f0b9a549707ceeeb791e1f3e2be815ab0ab02e47db25f96e2a2713ac1dcabd"
+  },
+  "previousResult": "Revision 1 reached STR PLAY then STR E06 after left tone and brief right tone. Other behavior reported correct. Operator result reports are treated as restored.",
+  "revisionChanges": "Replace four-chunk refill allowance with bounded high-water refill. Service producer between guest frames, around core render, and every 2 KiB of LCD transfer. No codec or diagnostic transitions inside refill. Pause/starvation/end checks retained.",
+  "package": {
+    "files": ["ACTIVE.PKT", "LASTGOOD.PKT", "APP.PKT"],
+    "bytesEach": 214056,
+    "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+    "role": "Previously qualified Alpha app plus embedded recovery; no guest audio API"
+  },
+  "build": {
+    "core": "rust",
+    "quickjs": "2026-06-04",
+    "gates": ["AUDIO_STREAM_GATE=1", "AUDIO_GATE=1", "POWER_LIFECYCLE_GATE=1", "NATIVE_KERNEL_GATE=1", "LINEAGE_GATE=1"],
+    "environment": "Ubuntu-24.04 WSL, clang 18.1.3, nightly-2026-07-02 Rust"
+  },
+  "checks": [
+    "ARMv4T Rust/QuickJS native build, image verifiers, and existing host checks passed",
+    "Stream-gate stub build, image verifiers, and existing host checks passed",
+    "Gate-off stub build, image verifiers, and existing host checks passed",
+    "DMA IRQ relocation review: only native scheduling and timer calls; no I2C, guest, allocation, or cache flush",
+    "IRQ vector disassembly confirms 64-byte saved frame and aligned C ABI",
+    "Ring and silence buffers are 32-byte aligned inside BSS, accessed through uncached alias"
+  ],
+  "kitRoundTrip": "Passed revision 2 install/verify/exact restore on temporary Q: volume, including original APP/PENDING files and removal of transaction state. No mock receipts included in the operator kit.",
+  "probe": {
+    "trigger": "Left+Right held for one second; repeat chord cancels",
+    "rateHz": 44100,
+    "format": "signed 16-bit interleaved stereo",
+    "ringFrames": 16384,
+    "dmaChunkFrames": 1024,
+    "producerReserveFrames": 12288,
+    "codecHeadphoneVolumeDb": -40,
+    "pcmPeak": 2048,
+    "fullScale": 32768,
+    "silenceLeadFrames": 4410,
+    "silenceTailFrames": 4410,
+    "automaticChecks": "Native rate within 10 percent, stable nonempty pause queue, exactly one deliberate underrun episode, silence fallback, exact source retirement, single end request/event, FIFO drain, cleanup"
+  },
+  "hardwarePending": ["audible channel routing and timing", "background input/render response", "pause/resume and starvation recovery", "cancel/restart", "suspend/wake cleanup", "USB playback", "startup and transition noise", "original Rockbox restore"],
+  "scope": "One native DMA sink, not the portable audio.pcm contract. No recording, line-out, guest audio namespace, direct OSOS installation, or writable app filesystem. Startup crackle mitigation is unproven. Firmware references remain read-only."
+}

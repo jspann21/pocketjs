@@ -146,3 +146,11 @@ contract remain a later gate. The operator passed this procedure on
 2026-09-02 with correct audio and a slight startup crackle; the saved restore
 receipt verifies the original Rockbox image. Startup transient reduction
 remains open.
+
+The passed candidate, `phase1-audio-stream2-simple`, adds a native-clock stereo
+PCM ring, DMA completion IRQs, background playback, preserved pause queues,
+deliberate underrun recovery, exact end/drain checks, and lifecycle cleanup.
+`docs/PHASE1_AUDIO_STREAM.md` documents its scope and fixed low-volume
+procedure. Build with `AUDIO_STREAM_GATE=1` plus the audio and Campaign 3
+gates. **Revision 2 passed its physical procedure on 2026-09-02**; it does not
+expose the portable audio namespace. A small first-tone crackle remains.

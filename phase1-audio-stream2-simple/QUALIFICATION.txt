@@ -1,0 +1,10 @@
+NATIVE PCM STREAMING REVISION 2 - PASSED 2026-09-02
+
+Candidate: c3f0b9a549707ceeeb791e1f3e2be815ab0ab02e47db25f96e2a2713ac1dcabd
+Bytes: 1116680
+Operator: everything worked exactly as specified.
+Noise: small crackle may have improved; only on first tone of the sequence.
+Disposition: the complete revision 2 physical procedure passed.
+Restore: assumed complete per the operator's standing instruction.
+Limit: first-tone transient remains. This qualifies the native fixed-format
+DMA sink, not the complete portable audio.pcm namespace or multiple streams.
