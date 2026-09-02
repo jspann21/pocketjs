@@ -1,0 +1,45 @@
+﻿{
+    "schema":  1,
+    "verifiedAt":  "2026-09-01T22:31:32.5041678-04:00",
+    "mount":  "F:\\",
+    "candidate":  {
+                      "file":  "pocketjs-a1099-phase1-lineage.ipod",
+                      "sha256":  "9fce741604fe5d7b79506d8de73cf9794a54ae8b1f540d552031b1a21f991e71"
+                  },
+    "stagedFiles":  {
+                        "ACTIVE.PKT":  "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+                        "PENDING.PKT":  "b58d7cbeae0545cfaa5e0de3c9028ca18d98d3b4dd841f1f5934a0f3e298a58c",
+                        "STATE0.BIN":  "1b82ac80abc8cbea1b3777f0ade19795a398d1730f00b2ab0614443a2083b4ac",
+                        "STATE1.BIN":  "5721fb6065c6f602f5e77a4e5949573e95600d7d5e9542b05ec8e56cd66ebb17"
+                    },
+    "handoff":  {
+                    "requestedPath":  "F:\\",
+                    "directory":  "F:\\.rockbox",
+                    "targetExists":  true,
+                    "targetSha256":  "9fce741604fe5d7b79506d8de73cf9794a54ae8b1f540d552031b1a21f991e71",
+                    "backupExists":  true,
+                    "backupSha256":  "1e41fb8fa8d9e669be03e390b9b9529cb92484138d7a4a0fbcc33266c4e0ffdd",
+                    "state":  {
+                                  "version":  2,
+                                  "directory":  "F:\\.rockbox",
+                                  "target":  "rockbox.ipod",
+                                  "backup":  "rockbox.ipod.pocketjs-backup",
+                                  "original":  {
+                                                   "bytes":  1166176,
+                                                   "sha256":  "1e41fb8fa8d9e669be03e390b9b9529cb92484138d7a4a0fbcc33266c4e0ffdd",
+                                                   "imageBytes":  1166168,
+                                                   "imageSha256":  "5045268e255584fff8687a1e697af63f57cd1e673822cdb586e849ef1f0a194e"
+                                               },
+                                  "probe":  {
+                                                "path":  "C:\\Users\\ajrty\\Desktop\\Projects\\pocketjs\\phase1-lineage-simple\\pocketjs-a1099-phase1-lineage.ipod",
+                                                "bytes":  1094932,
+                                                "sha256":  "9fce741604fe5d7b79506d8de73cf9794a54ae8b1f540d552031b1a21f991e71",
+                                                "imageBytes":  1094924,
+                                                "imageSha256":  "2ed3247f3097e937678f646145480a4f5c60daf8144fb3585a08fe9f93a9ed3e"
+                                            }
+                              },
+                    "staleStateFiles":  [
+
+                                        ]
+                }
+}

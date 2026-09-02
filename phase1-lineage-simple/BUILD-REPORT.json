@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "awaiting-hardware",
+  "status": "hardware-qualified",
   "candidate": {
     "file": "pocketjs-a1099-phase1-lineage.ipod",
     "bytes": 1094932,
@@ -46,6 +46,18 @@
     "ROLL A G00006",
     "KEEP A G00009"
   ],
+  "observedDeviceEvidence": [
+    "ACPT P G00003",
+    "CRSH P G00004",
+    "ROLL A G00006",
+    "KEEP A G00009"
+  ],
+  "restore": {
+    "verified": true,
+    "restoredRockboxSha256": "1e41fb8fa8d9e669be03e390b9b9529cb92484138d7a4a0fbcc33266c4e0ffdd",
+    "backupExistsAfterRestore": false,
+    "lineageTransactionExistsAfterRestore": false
+  },
   "checks": [
     "TypeScript no-emit check",
     "ARMv4T Rust plus QuickJS firmware build",

@@ -44,3 +44,13 @@ retried. `LINE E##` is a gate failure.
 This batch does not claim physical power-loss qualification, low-battery
 writes, arbitrary writable files, package promotion/copying, FAT metadata
 mutation, or general host-side package rotation.
+
+## Qualification
+
+The exact candidate was physically qualified with all four expected lines.
+The pending Beta app was accepted only after its first presented frame, its
+deliberate runtime fault was recorded, the next boot rolled back to Alpha, and
+the following boot kept Alpha without retrying the unchanged rejected pending
+package. The verified restore returned Rockbox to SHA-256
+`1e41fb8fa8d9e669be03e390b9b9529cb92484138d7a4a0fbcc33266c4e0ffdd`
+with no backup or lineage transaction left behind.
