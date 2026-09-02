@@ -1,0 +1,20 @@
+CAMPAIGN 4 AUDIO HARDWARE GATE - RESULTS
+
+Candidate SHA-256 from INSTALL.ps1:
+Normal app and PWR BAT after boot: YES / NO
+Continuous or unexpected sound at boot: YES / NO
+First tone final label:
+Left-only then right-only, with a short silent gap: YES / NO / SILENT
+Tone quiet and clean: YES / NO / SILENT
+Any pop, click, hiss, distortion, or wrong channel:
+Repeat after full button release works once: YES / NO
+Battery suspend / button wake / RESUME: YES / NO
+Tone after resume matches / final label:
+USB transition preserves display: YES / NO
+Tone on USB matches / final label:
+LCD WAKE -> SHDN READY -> Menu+Play disk mode: YES / NO
+RESTORE.ps1 reports RESTORE VERIFIED: YES / NO
+Original Rockbox boots normally after restore: YES / NO
+Any unexpected behavior or exact error label:
+
+Return this text plus INSTALL-STATUS.json and RESTORE-STATUS.json.

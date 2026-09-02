@@ -38,6 +38,7 @@
 #define PP_DEV_EN2    MMIO32(0x60006010u)
 #define PP_DEV_INIT1  MMIO32(0x70000010u)
 #define PP_DEV_INIT2  MMIO32(0x70000020u)
+#define PP_AUDIO_CLOCK_CTRL MMIO32(0x70000018u)
 #define PP_CLOCK_SOURCE MMIO32(0x60006020u)
 #define PP_CLCD_CLOCK_SRC MMIO32(0x600060a0u)
 #define PP_GPO32_VAL          MMIO32(0x70000080u)
@@ -46,6 +47,8 @@
 #define PP_GPO32_INPUT_ENABLE MMIO32(0x7000008cu)
 
 #define PP_DEV_I2C   0x00001000u
+#define PP_DEV_EXTCLOCKS 0x00000002u
+#define PP_DEV_I2S   0x00000800u
 #define PP_DEV_OPTO  0x00010000u
 #define PP_DEV_PWM   0x00020000u
 #define PP_DEV_LCD   0x04000000u
@@ -104,6 +107,36 @@
 #define PP_GPIOB_OUTPUT_EN_ATOMIC  MMIO32(0x6000d814u)
 #define PP_GPIOA_OUTPUT_VAL_ATOMIC MMIO32(0x6000d820u)
 #define PP_GPIOB_OUTPUT_VAL_ATOMIC MMIO32(0x6000d824u)
+#define PP_GPIOI_OUTPUT_VAL_ATOMIC MMIO32(0x6000d920u)
+
+/* PP5020 IIS audio block. WM8975 is the bus master on the iPod Photo, so
+ * the PP5020 side intentionally leaves PP_IIS_MASTER clear. */
+#define PP_IISDIV              MMIO32(0x60006080u)
+#define PP_IISCONFIG           MMIO32(0x70002800u)
+#define PP_IISCLK              MMIO32(0x70002808u)
+#define PP_IISFIFO_CFG         MMIO32(0x7000280cu)
+#define PP_IISFIFO_WR          MMIO32(0x70002840u)
+#define PP_IISFIFO_WR16        MMIO16(0x70002840u)
+
+#define PP_IIS_RESET           (1u << 31)
+#define PP_IIS_TXFIFOEN        (1u << 29)
+#define PP_IIS_RXFIFOEN        (1u << 28)
+#define PP_IIS_MASTER          (1u << 25)
+#define PP_IIS_IRQTX           (1u << 1)
+#define PP_IIS_IRQRX           (1u << 0)
+#define PP_IIS_FORMAT_MASK     (0x3u << 10)
+#define PP_IIS_FORMAT_IIS      (0x0u << 10)
+#define PP_IIS_SIZE_MASK       (0x3u << 8)
+#define PP_IIS_SIZE_16BIT      (0x0u << 8)
+#define PP_IIS_FIFO_FORMAT_MASK (0x7u << 4)
+#define PP_IIS_FIFO_FORMAT_LE16_2 (0x7u << 4)
+#define PP_IIS_RXCLR           (1u << 12)
+#define PP_IIS_TXCLR           (1u << 8)
+#define PP_IIS_RX_FULL_LVL_12  (0x3u << 4)
+#define PP_IIS_TX_EMPTY_LVL_4 (0x1u << 0)
+#define PP_IIS_TX_FREE_MASK    (0x3fu << 16)
+#define PP_IIS_TX_FREE_COUNT   ((PP_IISFIFO_CFG & PP_IIS_TX_FREE_MASK) >> 16)
+#define PP_IIS_TX_IS_EMPTY     (PP_IIS_TX_FREE_COUNT >= 16u)
 
 static inline void pp_gpio_set(volatile uint32_t *atomic_reg, uint32_t mask)
 {

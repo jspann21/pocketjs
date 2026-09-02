@@ -1,4 +1,5 @@
 #include "backlight.h"
+#include "audio.h"
 #include "cache.h"
 #include "core_bridge.h"
 #include "heap.h"
@@ -43,6 +44,10 @@
 #define PJS_PHASE1_POWER_LIFECYCLE_GATE 0
 #endif
 
+#ifndef PJS_PHASE1_AUDIO_GATE
+#define PJS_PHASE1_AUDIO_GATE 0
+#endif
+
 #if PJS_PHASE1_RELIABILITY_GATE && !PJS_PHASE1_LINEAGE_GATE
 #error "The reliability gate requires the lineage gate"
 #endif
@@ -61,6 +66,10 @@
 
 #if PJS_PHASE1_POWER_LIFECYCLE_GATE && !PJS_PHASE1_POWER_TELEMETRY
 #error "The power lifecycle gate requires power telemetry"
+#endif
+
+#if PJS_PHASE1_AUDIO_GATE && !PJS_PHASE1_POWER_LIFECYCLE_GATE
+#error "The audio gate requires the power lifecycle gate"
 #endif
 
 #define PJS_PHASE1_PLACEHOLDER_BATTERY_MV 3800u
@@ -332,10 +341,21 @@ static bool kernel_commit_clean_lineage(PjsLineageState *lineage)
 }
 
 static bool kernel_suspend(PjsPowerLifecycle *lifecycle,
+#if PJS_PHASE1_AUDIO_GATE
+                           PjsStorageDiskPower *disk_power,
+                           PjsAudioState *audio)
+#else
                            PjsStorageDiskPower *disk_power)
+#endif
 {
     if (lifecycle == 0 || disk_power == 0 || lifecycle->suspended != 0u ||
         !lcd_ready()) return false;
+    /* Quiesce the codec before touching the disk rail or panel. A codec I2C
+     * fault is diagnostic only; the audio module always disables its FIFO and
+     * the lifecycle can still take the safe storage path. */
+#if PJS_PHASE1_AUDIO_GATE
+    if (audio != 0) (void)pjs_audio_stop(audio);
+#endif
     PjsLcdClockState clock_state = {0};
     lcd_clock_snapshot(&clock_state);
     if (pjs_storage_disk_flush_standby_off(disk_power) != PJS_STORAGE_OK) {
@@ -372,8 +392,17 @@ static bool kernel_resume(PjsPowerLifecycle *lifecycle)
 }
 
 static bool kernel_shutdown_storage(PjsLineageState *lineage,
+#if PJS_PHASE1_AUDIO_GATE
+                                     PjsStorageDiskPower *disk_power,
+                                     PjsAudioState *audio)
+#else
                                      PjsStorageDiskPower *disk_power)
+#endif
 {
+    /* No storage command is issued while the codec can still be clocking. */
+#if PJS_PHASE1_AUDIO_GATE
+    if (audio != 0) (void)pjs_audio_stop(audio);
+#endif
     /* The lineage write can dirty the disk cache, so flush only after it is
      * committed. An already-clean ACTIVE record is accepted above, making a
      * retry safe if flush or standby failed after the first commit. */
@@ -903,6 +932,11 @@ void kernel_main_phase1(void)
     timer_irq_init();
     irq_enable_global();
 
+#if PJS_PHASE1_AUDIO_GATE
+    PjsAudioState audio = {0};
+    pjs_audio_state_init(&audio);
+#endif
+
 #if PJS_PHASE1_POWER_TELEMETRY
     /* Keep the already-qualified boot frame independent from I2C. Telemetry
      * starts only after the UI, cache, timer and input paths are alive. */
@@ -913,6 +947,16 @@ void kernel_main_phase1(void)
      * down. */
     power_telemetry_sample(&power);
 #endif
+#endif
+
+#if PJS_PHASE1_AUDIO_GATE
+    int audio_init_result = pjs_audio_init(&audio);
+    if (audio_init_result == PJS_AUDIO_RESULT_OK) {
+        pjs_core_set_kernel_diagnostic(22u, 0u); /* AUD READY */
+    } else {
+        pjs_core_set_kernel_diagnostic(25u,
+                                       error_magnitude(audio_init_result));
+    }
 #endif
 
 #if PJS_PHASE1_NATIVE_KERNEL_GATE
@@ -942,6 +986,10 @@ void kernel_main_phase1(void)
     bool suspend_chord_fired = false;
     bool automatic_shutdown_attempted = false;
     PjsStorageDiskPower disk_power = {0};
+#if PJS_PHASE1_AUDIO_GATE
+    uint32_t audio_chord_start = 0u;
+    bool audio_chord_fired = false;
+#endif
 #endif
 #endif
 
@@ -1162,6 +1210,13 @@ void kernel_main_phase1(void)
                     lcd_tested = true;
                     shutdown_ready = false;
                     pjs_core_set_kernel_diagnostic(14u, 0u);
+#if PJS_PHASE1_AUDIO_GATE
+                    int audio_resume_result = pjs_audio_resume(&audio);
+                    if (audio_resume_result != PJS_AUDIO_RESULT_OK) {
+                        pjs_core_set_kernel_diagnostic(
+                            25u, error_magnitude(audio_resume_result));
+                    }
+#endif
                     last_user_activity = now;
                 } else {
                     pjs_core_set_kernel_diagnostic(8u, 70u);
@@ -1192,7 +1247,11 @@ void kernel_main_phase1(void)
                 } else {
                     pjs_core_set_kernel_diagnostic(18u, 0u);
                     (void)render_and_present();
+#if PJS_PHASE1_AUDIO_GATE
+                    if (kernel_suspend(&lifecycle, &disk_power, &audio)) {
+#else
                     if (kernel_suspend(&lifecycle, &disk_power)) {
+#endif
                         pjs_core_set_kernel_diagnostic(13u, 0u);
                     } else {
                         pjs_core_set_kernel_diagnostic(8u, 71u);
@@ -1211,7 +1270,11 @@ void kernel_main_phase1(void)
                 restart_chord_fired = true;
                 pjs_core_set_kernel_diagnostic(18u, 0u);
                 (void)render_and_present();
+#if PJS_PHASE1_AUDIO_GATE
+                if (!kernel_shutdown_storage(&lineage, &disk_power, &audio)) {
+#else
                 if (!kernel_shutdown_storage(&lineage, &disk_power)) {
+#endif
                     pjs_core_set_kernel_diagnostic(8u, 72u);
                     restart_chord_start = now;
                 } else {
@@ -1231,7 +1294,11 @@ void kernel_main_phase1(void)
                 automatic_shutdown_attempted = true;
                 pjs_core_set_kernel_diagnostic(19u, 0u);
                 (void)render_and_present();
+#if PJS_PHASE1_AUDIO_GATE
+                if (kernel_shutdown_storage(&lineage, &disk_power, &audio)) {
+#else
                 if (kernel_shutdown_storage(&lineage, &disk_power)) {
+#endif
                     kernel_stop_runtime(&disk_package, &runtime_active);
                     timer_irq_stop();
                     irq_disable_global();
@@ -1258,7 +1325,11 @@ void kernel_main_phase1(void)
                     (PJS_POWER_EXTERNAL_MASK | PJS_POWER_SOURCE_UNSTABLE)) == 0u &&
                 (uint32_t)(now - last_user_activity) >=
                     PJS_POWER_IDLE_SLEEP_US) {
+#if PJS_PHASE1_AUDIO_GATE
+                if (kernel_suspend(&lifecycle, &disk_power, &audio)) {
+#else
                 if (kernel_suspend(&lifecycle, &disk_power)) {
+#endif
                     pjs_core_set_kernel_diagnostic(13u, 0u);
                     last_user_activity = now;
                 } else {
@@ -1268,6 +1339,36 @@ void kernel_main_phase1(void)
                     pjs_core_set_kernel_diagnostic(8u, 76u);
                 }
             }
+        }
+#endif
+
+#if PJS_PHASE1_AUDIO_GATE
+        /* Campaign 4 uses the two direction buttons together for a developer
+         * tone probe. It excludes every existing lifecycle/reset chord and is
+         * accepted only while the panel/runtime are awake. */
+        bool audio_chord = lifecycle.suspended == 0u &&
+            (input.buttons & (PJS_BUTTON_LEFT | PJS_BUTTON_RIGHT)) ==
+                (PJS_BUTTON_LEFT | PJS_BUTTON_RIGHT) &&
+            (input.buttons & (PJS_BUTTON_MENU | PJS_BUTTON_SELECT |
+                              PJS_BUTTON_PLAY)) == 0u;
+        if (!audio_chord) {
+            audio_chord_start = 0u;
+            audio_chord_fired = false;
+        } else if (audio_chord_start == 0u) {
+            audio_chord_start = now;
+        } else if (!audio_chord_fired &&
+                   (uint32_t)(now - audio_chord_start) >= 1000000u) {
+            audio_chord_fired = true;
+            pjs_core_set_kernel_diagnostic(23u, 0u); /* AUD TONE */
+            (void)render_and_present();
+            int audio_tone_result = pjs_audio_tone(&audio);
+            if (audio_tone_result == PJS_AUDIO_RESULT_OK) {
+                pjs_core_set_kernel_diagnostic(24u, 0u); /* AUD OFF */
+            } else {
+                pjs_core_set_kernel_diagnostic(
+                    25u, error_magnitude(audio_tone_result));
+            }
+            (void)render_and_present();
         }
 #endif
 
@@ -1300,7 +1401,11 @@ void kernel_main_phase1(void)
                 }
                 pjs_core_set_kernel_diagnostic(18u, 0u);
                 (void)render_and_present();
+#if PJS_PHASE1_AUDIO_GATE
+                if (!kernel_shutdown_storage(&lineage, &disk_power, &audio)) {
+#else
                 if (!kernel_shutdown_storage(&lineage, &disk_power)) {
+#endif
                     pjs_storage_disk_handoff_clear();
                     pjs_core_set_kernel_diagnostic(
                         8u, 41u + disk_power.state);

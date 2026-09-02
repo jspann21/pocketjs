@@ -591,6 +591,14 @@ pub extern "C" fn pjs_core_set_kernel_diagnostic(mode: u32, error: u32) {
         19 => (String::from("BAT OFF"), abgr(150, 20, 38, 255)),
         20 => (String::from("DISK OFF"), abgr(96, 42, 150, 255)),
         21 => (String::from("SUSP EXT"), abgr(142, 75, 0, 255)),
+        22 => (String::from("AUD READY"), abgr(16, 112, 72, 255)),
+        23 => (String::from("AUD TONE"), abgr(96, 42, 150, 255)),
+        24 => (String::from("AUD OFF"), abgr(0, 92, 110, 255)),
+        25 => {
+            let mut output = String::from("AUD E");
+            push_fixed_decimal(&mut output, error, &[10, 1]);
+            (output, abgr(150, 20, 38, 255))
+        }
         _ => {
             let mut output = String::from("KERN E");
             push_fixed_decimal(&mut output, error, &[10, 1]);

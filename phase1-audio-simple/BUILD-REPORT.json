@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "status": "hardware-qualified-with-startup-crackle",
+  "campaign": "Campaign 4 - Audio hardware ownership, first gate",
+  "baseCommit": "98acb7b",
+  "sourceState": "Campaign 4 audio ownership checkpoint",
+  "qualification": {
+    "date": "2026-09-02",
+    "operatorResult": "Everything worked as expected; audio correct; slight crackle on audio start; restored",
+    "limitation": "Startup transient reduction remains open; this is not artifact-free audio qualification",
+    "restoredRockboxSha256": "451a7ba76fc95a073d3cbbe7857724623401d430adee4b457b66c4035bf4609e"
+  },
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-audio.ipod",
+    "bytes": 1110360,
+    "sha256": "e3dd2ee1e51667b17f10abbe943d86cd439c35d104d0f63215c2de800cfbaa45"
+  },
+  "package": {
+    "files": ["ACTIVE.PKT", "LASTGOOD.PKT", "APP.PKT"],
+    "bytesEach": 214056,
+    "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+    "role": "previously qualified Alpha app and embedded recovery"
+  },
+  "build": {
+    "core": "rust",
+    "quickjs": "2026-06-04",
+    "gates": ["AUDIO_GATE=1", "POWER_LIFECYCLE_GATE=1", "NATIVE_KERNEL_GATE=1", "LINEAGE_GATE=1"],
+    "environment": "Ubuntu-24.04 WSL, clang 18.1.3, nightly-2026-07-02 Rust toolchain"
+  },
+  "checks": [
+    "ARMv4T Rust plus QuickJS build and existing host checks passed",
+    "stub build and existing host checks passed",
+    "verify_build.py and verify_phase1.py passed for both images",
+    "six fixed payload SHA-256 checks passed",
+    "PowerShell install, verify, and exact restore mock round trip passed"
+  ],
+  "probe": {
+    "trigger": "Left+Right held for one second, all other buttons released",
+    "rateHz": 44100,
+    "toneHz": 440,
+    "sequenceMs": {"leftOnly": 250, "silence": 100, "rightOnly": 250},
+    "codecHeadphoneVolumeDb": -40,
+    "pcmPeak": 2048,
+    "fullScale": 32768,
+    "feedTimeAcceptedUs": [540000, 660000]
+  },
+  "scope": "WM8975 headphone output, PP5020 I2S polling, bounded I2C/FIFO waits, teardown at lifecycle transitions. No DMA/FIQ, recording, line-out, portable audio namespace, or audio.pcm capability. Audible output, channel routing, analog behavior, and resume require the exact physical procedure. RetailOS binaries were inspected read-only and not copied. No direct OSOS installation."
+}

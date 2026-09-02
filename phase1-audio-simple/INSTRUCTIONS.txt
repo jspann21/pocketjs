@@ -1,0 +1,48 @@
+POCKETJS IPOD PHOTO - CAMPAIGN 4 AUDIO HARDWARE GATE
+
+This candidate is NOT hardware-qualified. It tests a short left/right tone,
+not music streaming. Keep the iPod charged. Use ordinary wired headphones,
+not an amplifier or dock line-out. Start with the earpieces away from your
+ears; disconnect them immediately if output is loud or abnormal. Volume is
+fixed low in the firmware; wheel motion does not change it.
+
+1. With the restored iPod in disk mode at F:\, open PowerShell in this folder:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+2. Safely eject, disconnect USB, and boot. The normal app should appear with
+   PWR BAT after the source settles. AUD READY may appear briefly first; you
+   do not need to catch it. There must be no continuous sound at boot.
+
+3. Connect headphones. Hold Left+Right together for one second, with no other
+   button held. Expect AUD TONE briefly, then AUD OFF. The intended sound is
+   a quiet 440 Hz tone in LEFT only for 1/4 second, 1/10 second of silence,
+   then RIGHT only for 1/4 second. The app can pause during this 0.6-second
+   diagnostic. Release both buttons completely. If the sound is normal and
+   quiet, listen normally and repeat once. Record the channel order, sound,
+   final label, and any pop/noise. If silent, report silence; do not amplify it.
+
+4. On battery, hold Menu+Right for two seconds, release fully, then press one
+   button to wake. Expect the screen to return and RESUME. Repeat Left+Right
+   once; the same left/right sequence and AUD OFF must return. AUD OFF and
+   RESUME are last-event labels and may remain until another event. The
+   existing 10-second idle suspend remains active.
+
+5. Connect USB and wait for PWR USB. Repeat Left+Right once. Verify the same
+   tone and no lost display. Do not repeat unrelated cable/battery campaigns.
+
+6. Press center once for LCD WAKE, then Play once for SHDN READY. Hold
+   Menu+Play for two seconds to return to disk mode. Once F:\ mounts, run:
+
+   .\RESTORE.ps1
+
+7. Safely eject and confirm normal Rockbox boot. Return RESULTS.txt along
+   with INSTALL-STATUS.json and RESTORE-STATUS.json.
+
+STOP on AUD E##, KERN E##, loud/continuous noise, lost display, disk error,
+or unexpected reboot. AUD E02 = bounded I2C failure; E03 = tone clock timing
+outside the expected range; E04 = FIFO timeout. Do not keep retrying a fault.
+If necessary use Menu+Select to hard-reset, then Select+Play for boot-ROM
+disk mode and run RESTORE.ps1. These are recovery actions, not test passes.
+Do not install directly into OSOS or alter the firmware partition.

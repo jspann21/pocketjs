@@ -134,3 +134,15 @@ wake-source accounting. Candidate
 `b9d9a4a0a162419adc36dd6474b45aaa772b6dd703f554e8da7edf6514e971b3`
 passed its revised physical procedure and verified restore on 2026-09-02. It
 does not install directly into OSOS or add Campaign 4 audio.
+
+## Campaign 4: audio hardware ownership
+
+`docs/PHASE1_AUDIO.md` describes the passed audio ownership candidate in
+`phase1-audio-simple`. `AUDIO_GATE=1` adds bounded WM8975 headphone output and
+a user-triggered left/right I2S test tone, with teardown before lifecycle
+transitions. It requires the Campaign 3 build gates. **The portable
+`audio.pcm` capability is not advertised**; streaming and its complete event
+contract remain a later gate. The operator passed this procedure on
+2026-09-02 with correct audio and a slight startup crackle; the saved restore
+receipt verifies the original Rockbox image. Startup transient reduction
+remains open.

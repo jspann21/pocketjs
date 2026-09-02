@@ -81,3 +81,9 @@ Physical power interruption remains a separate, unqualified boundary.
 Audio, writable per-app filesystem, USB transport, and networking remain absent
 from the target profile until their complete observable contracts are shipped
 and tested. Capability declarations will never be aspirational.
+
+Campaign 4 begins with the passed codec/I2S ownership candidate in
+`PHASE1_AUDIO.md` and `phase1-audio-simple`. Its short native left/right tone
+is a hardware diagnostic, not an implementation of `globalThis.audio`.
+The physical procedure passed on 2026-09-02, with a slight startup crackle
+recorded for follow-up. Native-clock streaming remains the next boundary.

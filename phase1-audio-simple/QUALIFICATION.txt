@@ -1,0 +1,14 @@
+CAMPAIGN 4 AUDIO OWNERSHIP - 2026-09-02
+
+Candidate: e3dd2ee1e51667b17f10abbe943d86cd439c35d104d0f63215c2de800cfbaa45
+Bytes: 1110360
+Operator: everything worked exactly as expected, audio correct, restored.
+Observed exception: slight crackle on audio start.
+Disposition: audio ownership procedure passed; startup transient remains open.
+This does not qualify portable audio.pcm, DMA streaming, or artifact-free sound.
+
+INSTALL-STATUS.json identifies the exact candidate and original Rockbox.
+RESTORE-STATUS.json at 2026-09-02T12:43:10-04:00 records the restored original:
+451a7ba76fc95a073d3cbbe7857724623401d430adee4b457b66c4035bf4609e
+No backup, handoff state, stale state, or lineage transaction remains in receipt.
+The iPod was not mounted for a subsequent live check; no device write was made.
