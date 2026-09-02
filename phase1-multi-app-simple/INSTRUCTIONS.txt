@@ -1,0 +1,32 @@
+POCKETJS IPOD PHOTO - MULTI-APP BATCH
+
+This is one install and two boots. Do not reconnect or run another staging
+script between Alpha and Beta.
+
+1. Restore Rockbox first if any older PocketJS test is still installed.
+2. Connect the iPod in disk mode. Confirm it is F:\ (or pass another drive).
+3. Open PowerShell in this folder and run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+4. When INSTALL COMPLETE appears, safely eject and boot.
+5. The launcher should list ALPHA and BETA with ALPHA selected.
+6. Press center. Alpha should show LAUNCH: OK and `APP 1/2 R#####`.
+7. Hold Menu+Play for two seconds to reboot.
+8. In the launcher, turn the wheel to BETA and press center.
+9. Beta should show LAUNCH: OK and `APP 2/2 R#####`.
+10. Reconnect in disk mode and run:
+
+    .\RESTORE.ps1
+
+11. Safely eject and confirm normal Rockbox boot.
+
+Fill in RESULTS.txt. Return these three files:
+
+- RESULTS.txt
+- INSTALL-STATUS.json
+- RESTORE-STATUS.json
+
+If anything is wrong or unreadable, also send one photo. Do not repeat prior
+rectangle, heartbeat, Hold, power, or ordinary-app observations.

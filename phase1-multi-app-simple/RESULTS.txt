@@ -1,0 +1,10 @@
+Launcher listed ALPHA and BETA: YES / NO
+Alpha launched: YES / NO
+Alpha source line: APP 1/2 R_____
+Reboot returned to launcher: YES / NO
+Wheel selected BETA: YES / NO
+Beta launched: YES / NO
+Beta source line: APP 2/2 R_____
+RESTORE VERIFIED: YES / NO
+Rockbox booted after restore: YES / NO
+Unexpected:

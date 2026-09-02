@@ -11,6 +11,8 @@
 #define FAT32_ATTR_DIRECTORY 0x10u
 #define FAT32_CLUSTER_BAD 0x0ffffff7u
 #define FAT32_CLUSTER_EOC 0x0ffffff8u
+#define FAT32_DIRECTORY_CLUSTER_LIMIT 64u
+#define FAT32_CATALOG_CLUSTER_LIMIT 8u
 
 static uint16_t le16(const uint8_t *bytes)
 {
@@ -211,7 +213,8 @@ static int find_entry(PjsFat32 *fat, uint32_t directory_cluster,
     uint32_t visited = 0u;
     uint8_t sector[PJS_STORAGE_SECTOR_BYTES];
     for (;;) {
-        if (!cluster_valid(fat, cluster) || visited++ >= fat->cluster_count) {
+        if (!cluster_valid(fat, cluster) ||
+            visited++ >= FAT32_DIRECTORY_CLUSTER_LIMIT) {
             return PJS_STORAGE_ERR_CHAIN;
         }
         uint32_t first = 0u;
@@ -244,6 +247,124 @@ static int find_entry(PjsFat32 *fat, uint32_t directory_cluster,
     }
 }
 
+int pjs_fat32_find_short_directory(PjsFat32 *fat, uint32_t parent_cluster,
+                                   const char directory_name[11],
+                                   uint32_t *cluster_out)
+{
+    if (fat == 0 || directory_name == 0 || cluster_out == 0) {
+        return PJS_STORAGE_ERR_ARGUMENT;
+    }
+    *cluster_out = 0u;
+    FatEntry directory = {0};
+    int rc = find_entry(fat, parent_cluster, directory_name, &directory);
+    if (rc != PJS_STORAGE_OK) return rc;
+    if ((directory.attributes & FAT32_ATTR_DIRECTORY) == 0u ||
+        !cluster_valid(fat, directory.cluster)) return PJS_STORAGE_ERR_NOT_FOUND;
+    *cluster_out = directory.cluster;
+    return PJS_STORAGE_OK;
+}
+
+static bool extension_matches(const uint8_t *entry, const char extension[3])
+{
+    return entry[8] == (uint8_t)extension[0] &&
+           entry[9] == (uint8_t)extension[1] &&
+           entry[10] == (uint8_t)extension[2];
+}
+
+static bool supported_short_base(const uint8_t *entry)
+{
+    bool saw_character = false;
+    bool saw_space = false;
+    for (uint32_t index = 0u; index < 8u; ++index) {
+        uint8_t character = entry[index];
+        if (character == (uint8_t)' ') {
+            saw_space = true;
+            continue;
+        }
+        if (saw_space) return false;
+        if (!((character >= (uint8_t)'A' && character <= (uint8_t)'Z') ||
+              (character >= (uint8_t)'0' && character <= (uint8_t)'9') ||
+              character == (uint8_t)'_' || character == (uint8_t)'-')) {
+            return false;
+        }
+        saw_character = true;
+    }
+    return saw_character;
+}
+
+int pjs_fat32_list_short_files(PjsFat32 *fat, uint32_t directory_cluster,
+                               const char extension[3],
+                               PjsStorageApp *entries, uint32_t capacity,
+                               uint32_t *count_out)
+{
+    if (fat == 0 || extension == 0 || entries == 0 || capacity == 0u ||
+        count_out == 0 || !cluster_valid(fat, directory_cluster)) {
+        return PJS_STORAGE_ERR_ARGUMENT;
+    }
+    *count_out = 0u;
+    uint32_t cluster = directory_cluster;
+    uint32_t visited = 0u;
+    uint8_t sector[PJS_STORAGE_SECTOR_BYTES];
+    for (;;) {
+        if (!cluster_valid(fat, cluster) ||
+            visited++ >= FAT32_CATALOG_CLUSTER_LIMIT) {
+            return PJS_STORAGE_ERR_CHAIN;
+        }
+        uint32_t first = 0u;
+        if (!cluster_lba(fat, cluster, &first)) return PJS_STORAGE_ERR_CHAIN;
+        for (uint32_t sec = 0u; sec < fat->sectors_per_cluster; ++sec) {
+            if (!fat->read_sector(fat->context, first + sec, sector)) {
+                return PJS_STORAGE_ERR_ATA;
+            }
+            for (uint32_t offset = 0u; offset < PJS_STORAGE_SECTOR_BYTES;
+                 offset += 32u) {
+                const uint8_t *entry = sector + offset;
+                if (entry[0] == 0x00u) return PJS_STORAGE_OK;
+                if (entry[0] == 0xe5u) continue;
+                uint8_t attributes = entry[11];
+                if (attributes == FAT32_ATTR_LONG_NAME ||
+                    (attributes & (FAT32_ATTR_VOLUME_ID | FAT32_ATTR_DIRECTORY)) != 0u ||
+                    !extension_matches(entry, extension) ||
+                    !supported_short_base(entry)) continue;
+                uint32_t high = le16(entry + 20);
+                uint32_t low = le16(entry + 26);
+                uint32_t file_cluster = ((high << 16) | low) & 0x0fffffffu;
+                uint32_t size = le32(entry + 28);
+                if (size == 0u || !cluster_valid(fat, file_cluster)) continue;
+                if (*count_out >= capacity) return PJS_STORAGE_ERR_TOO_MANY;
+                PjsStorageApp *result = &entries[*count_out];
+                for (uint32_t index = 0u; index < 11u; ++index) {
+                    result->file_name[index] = (char)entry[index];
+                }
+                result->size = size;
+                ++*count_out;
+            }
+        }
+        uint32_t next = 0u;
+        int rc = next_cluster(fat, cluster, &next);
+        if (rc != PJS_STORAGE_OK) return rc;
+        if (next >= FAT32_CLUSTER_EOC) return PJS_STORAGE_OK;
+        cluster = next;
+    }
+}
+
+int pjs_fat32_short_file_size_at(PjsFat32 *fat, uint32_t directory_cluster,
+                                 const char file_name[11],
+                                 uint32_t *size_out)
+{
+    if (fat == 0 || file_name == 0 || size_out == 0) {
+        return PJS_STORAGE_ERR_ARGUMENT;
+    }
+    *size_out = 0u;
+    FatEntry file = {0};
+    int rc = find_entry(fat, directory_cluster, file_name, &file);
+    if (rc != PJS_STORAGE_OK) return rc;
+    if ((file.attributes & FAT32_ATTR_DIRECTORY) != 0u || file.size == 0u ||
+        !cluster_valid(fat, file.cluster)) return PJS_STORAGE_ERR_NOT_FOUND;
+    *size_out = file.size;
+    return PJS_STORAGE_OK;
+}
+
 int pjs_fat32_short_file_size(PjsFat32 *fat,
                               const char directory_name[11],
                               const char file_name[11],
@@ -253,38 +374,24 @@ int pjs_fat32_short_file_size(PjsFat32 *fat,
         return PJS_STORAGE_ERR_ARGUMENT;
     }
     *size_out = 0u;
-    FatEntry directory = {0};
-    int rc = find_entry(fat, fat->root_cluster, directory_name, &directory);
+    uint32_t directory_cluster = 0u;
+    int rc = pjs_fat32_find_short_directory(
+        fat, fat->root_cluster, directory_name, &directory_cluster);
     if (rc != PJS_STORAGE_OK) return rc;
-    if ((directory.attributes & FAT32_ATTR_DIRECTORY) == 0u ||
-        !cluster_valid(fat, directory.cluster)) return PJS_STORAGE_ERR_NOT_FOUND;
-    FatEntry file = {0};
-    rc = find_entry(fat, directory.cluster, file_name, &file);
-    if (rc != PJS_STORAGE_OK) return rc;
-    if ((file.attributes & FAT32_ATTR_DIRECTORY) != 0u || file.size == 0u ||
-        !cluster_valid(fat, file.cluster)) return PJS_STORAGE_ERR_NOT_FOUND;
-    *size_out = file.size;
-    return PJS_STORAGE_OK;
+    return pjs_fat32_short_file_size_at(
+        fat, directory_cluster, file_name, size_out);
 }
 
-int pjs_fat32_read_short_file(PjsFat32 *fat,
-                              const char directory_name[11],
-                              const char file_name[11],
-                              uint8_t *destination, uint32_t capacity,
-                              uint32_t *length_out)
+int pjs_fat32_read_short_file_at(PjsFat32 *fat, uint32_t directory_cluster,
+                                 const char file_name[11],
+                                 uint8_t *destination, uint32_t capacity,
+                                 uint32_t *length_out)
 {
-    if (fat == 0 || directory_name == 0 || file_name == 0 ||
-        destination == 0 || length_out == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    if (fat == 0 || file_name == 0 || destination == 0 || length_out == 0 ||
+        !cluster_valid(fat, directory_cluster)) return PJS_STORAGE_ERR_ARGUMENT;
     *length_out = 0u;
-
-    FatEntry directory = {0};
-    int rc = find_entry(fat, fat->root_cluster, directory_name, &directory);
-    if (rc != PJS_STORAGE_OK) return rc;
-    if ((directory.attributes & FAT32_ATTR_DIRECTORY) == 0u ||
-        !cluster_valid(fat, directory.cluster)) return PJS_STORAGE_ERR_NOT_FOUND;
-
     FatEntry file = {0};
-    rc = find_entry(fat, directory.cluster, file_name, &file);
+    int rc = find_entry(fat, directory_cluster, file_name, &file);
     if (rc != PJS_STORAGE_OK) return rc;
     if ((file.attributes & FAT32_ATTR_DIRECTORY) != 0u) return PJS_STORAGE_ERR_NOT_FOUND;
     if (file.size == 0u || file.size > capacity) return PJS_STORAGE_ERR_TOO_LARGE;
@@ -322,4 +429,19 @@ int pjs_fat32_read_short_file(PjsFat32 *fat,
     }
     *length_out = written;
     return written == file.size ? PJS_STORAGE_OK : PJS_STORAGE_ERR_SHORT_READ;
+}
+
+int pjs_fat32_read_short_file(PjsFat32 *fat,
+                              const char directory_name[11],
+                              const char file_name[11],
+                              uint8_t *destination, uint32_t capacity,
+                              uint32_t *length_out)
+{
+    if (fat == 0 || directory_name == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    uint32_t directory_cluster = 0u;
+    int rc = pjs_fat32_find_short_directory(
+        fat, fat->root_cluster, directory_name, &directory_cluster);
+    if (rc != PJS_STORAGE_OK) return rc;
+    return pjs_fat32_read_short_file_at(
+        fat, directory_cluster, file_name, destination, capacity, length_out);
 }

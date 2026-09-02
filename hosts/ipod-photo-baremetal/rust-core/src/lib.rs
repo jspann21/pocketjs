@@ -369,24 +369,7 @@ fn boot_diagnostic_text(
     output
 }
 
-#[no_mangle]
-pub extern "C" fn pjs_core_set_boot_diagnostic(
-    source: u32,
-    failure_stage: u32,
-    failure_code: u32,
-    sector_reads: u32,
-) {
-    let Some(state) = (unsafe { STATE.as_mut() }) else {
-        return;
-    };
-    let text = boot_diagnostic_text(source, failure_stage, failure_code, sector_reads);
-    let panel_color = match source {
-        1..=4 => abgr(0, 92, 110, 255),
-        5 if failure_stage == 0 => abgr(96, 38, 125, 255),
-        5 => abgr(142, 75, 0, 255),
-        _ => abgr(150, 20, 38, 255),
-    };
-
+fn set_boot_diagnostic_text(state: &mut CoreState, text: &str, panel_color: u32) {
     if let Some(nodes) = state.boot_diagnostic.as_ref() {
         let panel = nodes.panel;
         let label = nodes.label;
@@ -431,6 +414,43 @@ pub extern "C" fn pjs_core_set_boot_diagnostic(
     state.ui.insert_before(spec::ROOT_ID, label, 0);
     state.boot_diagnostic = Some(BootDiagnosticNodes { panel, label });
     state.dirty = true;
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_set_boot_diagnostic(
+    source: u32,
+    failure_stage: u32,
+    failure_code: u32,
+    sector_reads: u32,
+) {
+    let Some(state) = (unsafe { STATE.as_mut() }) else {
+        return;
+    };
+    let text = boot_diagnostic_text(source, failure_stage, failure_code, sector_reads);
+    let panel_color = match source {
+        1..=4 => abgr(0, 92, 110, 255),
+        5 if failure_stage == 0 => abgr(96, 38, 125, 255),
+        5 => abgr(142, 75, 0, 255),
+        _ => abgr(150, 20, 38, 255),
+    };
+    set_boot_diagnostic_text(state, &text, panel_color);
+}
+
+#[no_mangle]
+pub extern "C" fn pjs_core_set_app_diagnostic(selected: u32, count: u32, sector_reads: u32) {
+    let Some(state) = (unsafe { STATE.as_mut() }) else {
+        return;
+    };
+    let count = count.clamp(1, 9);
+    let selected = selected.min(count - 1);
+    let mut text = String::with_capacity(18);
+    text.push_str("APP ");
+    text.push(char::from(b'1' + selected as u8));
+    text.push('/');
+    text.push(char::from(b'0' + count as u8));
+    text.push_str(" R");
+    push_fixed_decimal(&mut text, sector_reads, &[10_000, 1_000, 100, 10, 1]);
+    set_boot_diagnostic_text(state, &text, abgr(0, 92, 110, 255));
 }
 
 #[no_mangle]

@@ -24,6 +24,8 @@
 #define PJS_QJS_MALLOC_OVERHEAD 8u
 #define PJS_QJS_ROOT_ID 1
 #define PJS_QJS_HOST_ABI 1
+#define PJS_QJS_MAX_LAUNCHER_APPS 6u
+#define PJS_QJS_LAUNCHER_LABEL_BYTES 9u
 
 /* The A1099 input decoder intentionally uses a compact, device-local bit
  * layout (input.h) for the native diagnostic screen.  The guest never sees
@@ -74,6 +76,10 @@ static JSValue frame_function;
  * never need this object.  Keeping it under a target-prefixed name prevents
  * accidental collision with the framework namespace. */
 static JSValue ipod_input_value;
+static JSValue launcher_value;
+static uint8_t launcher_labels[PJS_QJS_MAX_LAUNCHER_APPS]
+                              [PJS_QJS_LAUNCHER_LABEL_BYTES];
+static uint32_t launcher_count;
 static uint32_t error_code;
 static uint32_t execution_deadline;
 static bool execution_timed_out;
@@ -81,6 +87,28 @@ static bool execution_timed_out;
  * Keep that package runnable while all new/generated guests use the standard
  * frame(buttons, analog?, touches?, hits?, touchSurfaces?) shape. */
 static bool legacy_frame_abi;
+
+bool qjs_runtime_set_launcher_catalog(const uint8_t *labels,
+                                      uint32_t count, uint32_t stride)
+{
+    if (count > PJS_QJS_MAX_LAUNCHER_APPS ||
+        (count != 0u && (labels == 0 || stride < PJS_QJS_LAUNCHER_LABEL_BYTES))) {
+        return false;
+    }
+    launcher_count = count;
+    for (uint32_t app = 0u; app < PJS_QJS_MAX_LAUNCHER_APPS; ++app) {
+        for (uint32_t index = 0u; index < PJS_QJS_LAUNCHER_LABEL_BYTES; ++index) {
+            launcher_labels[app][index] = 0u;
+        }
+        if (app >= count) continue;
+        const uint8_t *source = labels + app * stride;
+        for (uint32_t index = 0u; index < PJS_QJS_LAUNCHER_LABEL_BYTES; ++index) {
+            launcher_labels[app][index] = source[index];
+        }
+        launcher_labels[app][PJS_QJS_LAUNCHER_LABEL_BYTES - 1u] = 0u;
+    }
+    return true;
+}
 
 static size_t qjs_malloc_usable_size(const void *pointer)
 {
@@ -544,6 +572,35 @@ static int install_host(void)
         return -1;
     }
 
+    launcher_value = JS_UNDEFINED;
+    if (launcher_count != 0u) {
+        JSValue apps = JS_NewArray(context);
+        launcher_value = JS_NewObject(context);
+        if (JS_IsException(apps) || JS_IsException(launcher_value)) {
+            JS_FreeValue(context, apps);
+            JS_FreeValue(context, ui);
+            return -1;
+        }
+        for (uint32_t index = 0u; index < launcher_count; ++index) {
+            JSValue label = JS_NewString(
+                context, (const char *)launcher_labels[index]);
+            if (JS_IsException(label) ||
+                JS_SetPropertyUint32(context, apps, index, label) < 0) {
+                JS_FreeValue(context, apps);
+                JS_FreeValue(context, ui);
+                return -1;
+            }
+        }
+        if (JS_SetPropertyStr(context, launcher_value, "selected",
+                              JS_NewInt32(context, -1)) < 0 ||
+            JS_SetPropertyStr(context, ui, "__ipodApps", apps) < 0 ||
+            JS_SetPropertyStr(context, ui, "__ipodLauncher",
+                              JS_DupValue(context, launcher_value)) < 0) {
+            JS_FreeValue(context, ui);
+            return -1;
+        }
+    }
+
     /* JS_SetPropertyStr consumes ui whether it succeeds or fails. */
     if (JS_SetPropertyStr(context, global_value, "ui", ui) < 0 ||
         JS_SetPropertyStr(context, global_value, "__simHz", JS_NewInt32(context, 60)) < 0) {
@@ -584,6 +641,7 @@ bool qjs_runtime_boot(const PjsGuestPackage *guest)
     global_value = JS_UNDEFINED;
     frame_function = JS_UNDEFINED;
     ipod_input_value = JS_UNDEFINED;
+    launcher_value = JS_UNDEFINED;
     legacy_frame_abi = false;
     if (guest == 0 || guest->javascript == 0 || guest->javascript_length < 2u ||
         guest->javascript[guest->javascript_length - 1u] != 0u) {
@@ -738,10 +796,29 @@ uint32_t qjs_runtime_error_code(void)
     return error_code;
 }
 
+int32_t qjs_runtime_launcher_selection(void)
+{
+    if (context == 0 || launcher_count == 0u ||
+        JS_IsUndefined(launcher_value)) return -1;
+    JSValue selected = JS_GetPropertyStr(context, launcher_value, "selected");
+    if (JS_IsException(selected)) {
+        discard_exception();
+        return -1;
+    }
+    int32_t index = -1;
+    if (JS_ToInt32(context, &index, selected) < 0) {
+        discard_exception();
+        index = -1;
+    }
+    JS_FreeValue(context, selected);
+    return index >= 0 && (uint32_t)index < launcher_count ? index : -1;
+}
+
 void qjs_runtime_shutdown(void)
 {
     execution_budget_stop();
     if (context != 0) {
+        JS_FreeValue(context, launcher_value);
         JS_FreeValue(context, ipod_input_value);
         JS_FreeValue(context, frame_function);
         JS_FreeValue(context, global_value);
@@ -755,5 +832,6 @@ void qjs_runtime_shutdown(void)
     global_value = JS_UNDEFINED;
     frame_function = JS_UNDEFINED;
     ipod_input_value = JS_UNDEFINED;
+    launcher_value = JS_UNDEFINED;
     legacy_frame_abi = false;
 }

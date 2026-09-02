@@ -19,6 +19,9 @@
 
 bool qjs_runtime_boot(const PjsGuestPackage *guest);
 bool qjs_runtime_frame(const PjsCoreInput *input);
+bool qjs_runtime_set_launcher_catalog(const uint8_t *labels,
+                                      uint32_t count, uint32_t stride);
+int32_t qjs_runtime_launcher_selection(void);
 uint32_t qjs_runtime_error_code(void);
 void qjs_runtime_shutdown(void);
 

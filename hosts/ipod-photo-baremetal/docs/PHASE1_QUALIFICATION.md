@@ -104,6 +104,25 @@ worked during the first boot. The exact original Rockbox image and prior
 package-slot state were restored, with no backup, handoff state, stale state,
 or package transaction remaining.
 
+## Multi-app launcher candidate
+
+- File: `pocketjs-a1099-phase1-multi-app.ipod`
+- SHA-256: `de5e44d771b10a4d0d7b2d8d11411d428a5ed90ff0b7632de7d2d5d13653323b`
+- Launcher package SHA-256: `8a114f182fed434faa2838a1d2bad2bdd28dd4c61045c0ef560d784ef7b5a42e`
+- ALPHA.PKT SHA-256: `d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735`
+- BETA.PKT SHA-256: `de70763dab50c79381e38c3ead29fe2361584a33a157745038f7ff31a85fe7a9`
+- Expected Alpha evidence: `APP 1/2 R#####`
+- Expected Beta evidence: `APP 2/2 R#####`
+- Status: host-validated; physical result pending
+
+This candidate adds bounded read-only discovery under `/POCKETJS/APPS`,
+deterministic filename sorting, a pinned packaged launcher, and selection of
+two distinct ordinary framework apps from one installation. The physical gate
+uses two boots separated by Menu+Play reboot, without reconnecting or staging
+different files between boots. Qualification remains pending until both apps
+launch with the expected source lines and the exact prior Rockbox and package
+tree are restored.
+
 ## Qualified scope
 
 - Rockbox bootloader handoff and standalone ARMv4T startup
@@ -119,6 +138,7 @@ or package transaction remaining.
 - Multi-cluster ordinary-app disk loading with explicit source/read evidence
 - Invalid/corrupt disk package rejection with embedded recovery `.pocket` fallback
 - Read-only pending, active, last-good, legacy, and embedded package selection
+- Host-validated bounded multi-app discovery and packaged launcher (physical gate pending)
 - Runtime Hold transition with no QuickJS fault or scheduler drop
 
 ## Observed performance

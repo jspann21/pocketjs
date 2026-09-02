@@ -1,0 +1,19 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.ipod-photo-alpha",
+  "name": "pocketjs-ipod-photo-alpha",
+  "title": "PocketJS: Alpha",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": { "requires": ["text.glyphs.baked", "input.buttons"] }
+  },
+  "app": {
+    "entry": "apps/ipod-photo-multi/alpha-main.tsx",
+    "output": "ipod-photo-alpha-main",
+    "framework": "solid",
+    "viewport": {
+      "fixed": { "logical": [220, 176], "presentation": "native" }
+    }
+  }
+}

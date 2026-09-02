@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "status": "host-validated-physical-pending",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-multi-app.ipod",
+    "bytes": 1053204,
+    "sha256": "de5e44d771b10a4d0d7b2d8d11411d428a5ed90ff0b7632de7d2d5d13653323b"
+  },
+  "embeddedFallback": {
+    "file": "APP.PKT",
+    "bytes": 174792,
+    "sha256": "d2a412b62f62ba7ce64ee65aa62ff7abfe700259ee0df66da6a9daa759d89d1b"
+  },
+  "launcher": {
+    "file": "LAUNCHER.PKT",
+    "bytes": 175912,
+    "sha256": "8a114f182fed434faa2838a1d2bad2bdd28dd4c61045c0ef560d784ef7b5a42e",
+    "packageFnv1a64": "0x1868f7ba901119b9"
+  },
+  "apps": [
+    {
+      "file": "ALPHA.PKT",
+      "bytes": 214056,
+      "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735"
+    },
+    {
+      "file": "BETA.PKT",
+      "bytes": 214040,
+      "sha256": "de70763dab50c79381e38c3ead29fe2361584a33a157745038f7ff31a85fe7a9"
+    }
+  ],
+  "expectedDeviceEvidence": [
+    "APP 1/2 R#####",
+    "APP 2/2 R#####"
+  ],
+  "checks": [
+    "TypeScript",
+    "three target package builds and package verification",
+    "ARM firmware build",
+    "static and Phase 1 image verification",
+    "host QuickJS generated guest",
+    "fragmented multi-cluster FAT32 loader",
+    "PowerShell launcher/APPS/Rockbox backup-stage-restore mock round trips"
+  ]
+}

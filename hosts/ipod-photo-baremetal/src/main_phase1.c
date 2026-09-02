@@ -25,6 +25,8 @@
 
 #define PJS_PHASE1_PLACEHOLDER_BATTERY_MV 3800u
 #define PJS_WHEEL_DELTA_LIMIT 127
+#define PJS_LAUNCHER_PACKAGE_HASH_LOW 0x901119b9u
+#define PJS_LAUNCHER_PACKAGE_HASH_HIGH 0x1868f7bau
 
 extern unsigned char __heap_start;
 extern unsigned char __ram_end;
@@ -46,6 +48,8 @@ static const char last_good_package[11] =
     {'L','A','S','T','G','O','O','D','P','K','T'};
 static const char legacy_package[11] =
     {'A','P','P',' ',' ',' ',' ',' ','P','K','T'};
+static const char launcher_package[11] =
+    {'L','A','U','N','C','H','E','R','P','K','T'};
 
 static const PjsBootSlot boot_slots[] = {
     {pending_package, PJS_BOOT_SOURCE_PENDING},
@@ -149,6 +153,92 @@ static uint32_t render_and_present(void)
     return timer_now_us() - started;
 }
 
+static void catalog_labels(const PjsStorageCatalog *catalog,
+                           uint8_t labels[PJS_STORAGE_MAX_APPS][9])
+{
+    for (uint32_t app = 0u; app < PJS_STORAGE_MAX_APPS; ++app) {
+        for (uint32_t index = 0u; index < 9u; ++index) labels[app][index] = 0u;
+        if (app >= catalog->count) continue;
+        for (uint32_t index = 0u; index < 8u; ++index) {
+            char character = catalog->apps[app].file_name[index];
+            if (character == ' ') break;
+            labels[app][index] = (uint8_t)character;
+        }
+    }
+}
+
+static int32_t run_package_launcher(const PjsStorageCatalog *catalog,
+                                    PjsInputState *input,
+                                    const PjsPowerTelemetry *power,
+                                    bool cache_enabled)
+{
+    uint8_t labels[PJS_STORAGE_MAX_APPS][9];
+    catalog_labels(catalog, labels);
+    if (!qjs_runtime_set_launcher_catalog(
+            &labels[0][0], catalog->count, sizeof(labels[0]))) return -1;
+
+    PjsStorageFile launcher_file = {0};
+    int32_t storage_result = pjs_storage_load_guest_named(
+        &launcher_file, launcher_package);
+    if (storage_result != PJS_STORAGE_OK) {
+        qjs_runtime_set_launcher_catalog(0, 0u, 0u);
+        return -1;
+    }
+    PjsGuestPackage launcher_guest = {0};
+    if (pjs_package_open_ipod_photo(
+            launcher_file.bytes, launcher_file.length, &launcher_guest) != 0 ||
+        launcher_guest.package_hash_low != PJS_LAUNCHER_PACKAGE_HASH_LOW ||
+        launcher_guest.package_hash_high != PJS_LAUNCHER_PACKAGE_HASH_HIGH ||
+        !qjs_runtime_boot(&launcher_guest)) {
+        pjs_storage_release(&launcher_file);
+        qjs_runtime_set_launcher_catalog(0, 0u, 0u);
+        reset_core_after_failed_guest();
+        return -1;
+    }
+
+    PjsScheduler scheduler = {0};
+    int32_t pending_wheel_delta = 0;
+    uint32_t last_frame_us = 0u;
+    uint32_t next_frame = timer_now_us();
+    uint32_t exit_chord_start = 0u;
+    for (;;) {
+        input_poll(input);
+        pending_wheel_delta = clamp_wheel_delta(
+            pending_wheel_delta + (int32_t)input->wheel_delta);
+        uint32_t now = timer_now_us();
+        uint32_t chord = PJS_BUTTON_MENU | PJS_BUTTON_PLAY;
+        if ((input->buttons & chord) == chord) {
+            if (exit_chord_start == 0u) exit_chord_start = now;
+            if ((uint32_t)(now - exit_chord_start) >= 2000000u) pp_reboot();
+        } else {
+            exit_chord_start = 0u;
+        }
+        if ((int32_t)(now - next_frame) < 0) continue;
+
+        PjsCoreInput frame_input = core_input(
+            input, power, &scheduler, pending_wheel_delta, cache_enabled,
+            last_frame_us, PJS_RUNTIME_READY_DISK);
+        pending_wheel_delta = 0;
+        if (!qjs_runtime_frame(&frame_input) || pjs_core_step(&frame_input) < 0) {
+            qjs_runtime_shutdown();
+            pjs_storage_release(&launcher_file);
+            qjs_runtime_set_launcher_catalog(0, 0u, 0u);
+            reset_core_after_failed_guest();
+            return -1;
+        }
+        int32_t selection = qjs_runtime_launcher_selection();
+        if (pjs_core_needs_render() != 0u) last_frame_us = render_and_present();
+        next_frame = timer_now_us() + 16667u;
+        if (selection < 0) continue;
+
+        qjs_runtime_shutdown();
+        pjs_storage_release(&launcher_file);
+        qjs_runtime_set_launcher_catalog(0, 0u, 0u);
+        reset_core_after_failed_guest();
+        return selection;
+    }
+}
+
 void kernel_main_phase1(void)
 {
     disable_interrupt_sources();
@@ -176,6 +266,9 @@ void kernel_main_phase1(void)
     uint32_t runtime_status = PJS_RUNTIME_DISABLED;
     bool runtime_active = false;
     bool runtime_from_disk = false;
+    bool runtime_from_catalog = false;
+    uint32_t catalog_selection = 0u;
+    uint32_t catalog_count = 0u;
     uint32_t boot_source = PJS_BOOT_SOURCE_NONE;
     uint32_t boot_failure_stage = PJS_BOOT_FAILURE_NONE;
     uint32_t boot_failure_code = 0u;
@@ -188,7 +281,51 @@ void kernel_main_phase1(void)
         &input, &power, &initial_scheduler, 0, cache_enabled, 0u,
         PJS_RUNTIME_PACKAGE_ADMITTED);
     pjs_storage_reset_diagnostics();
-    for (uint32_t index = 0u;
+    PjsStorageCatalog catalog = {0};
+    int32_t discovery_result = pjs_storage_discover_apps(&catalog);
+    if (discovery_result == PJS_STORAGE_OK && catalog.count != 0u) {
+        int32_t selection = run_package_launcher(
+            &catalog, &input, &power, cache_enabled);
+        if (selection >= 0 && (uint32_t)selection < catalog.count) {
+            catalog_selection = (uint32_t)selection;
+            catalog_count = catalog.count;
+            int32_t storage_result = pjs_storage_load_app(
+                &disk_package, catalog.apps[catalog_selection].file_name);
+            if (storage_result == PJS_STORAGE_OK) {
+                int32_t package_result = pjs_package_open_ipod_photo(
+                    disk_package.bytes, disk_package.length, &guest);
+                if (package_result == 0) {
+                    runtime_status = PJS_RUNTIME_PACKAGE_ADMITTED;
+                    runtime_active = qjs_runtime_boot(&guest);
+                    if (runtime_active && qjs_runtime_frame(&initial_input)) {
+                        runtime_from_disk = true;
+                        runtime_from_catalog = true;
+                    } else {
+                        remember_boot_failure(
+                            runtime_active ? PJS_BOOT_FAILURE_FRAME :
+                                             PJS_BOOT_FAILURE_QUICKJS,
+                            qjs_runtime_error_code(),
+                            &boot_failure_stage, &boot_failure_code);
+                        if (runtime_active) qjs_runtime_shutdown();
+                        runtime_active = false;
+                        pjs_storage_release(&disk_package);
+                        reset_core_after_failed_guest();
+                    }
+                } else {
+                    remember_boot_failure(
+                        PJS_BOOT_FAILURE_PACKAGE, error_magnitude(package_result),
+                        &boot_failure_stage, &boot_failure_code);
+                    pjs_storage_release(&disk_package);
+                }
+            } else {
+                remember_boot_failure(
+                    PJS_BOOT_FAILURE_STORAGE, pjs_storage_last_error(),
+                    &boot_failure_stage, &boot_failure_code);
+            }
+        }
+    }
+
+    for (uint32_t index = 0u; !runtime_active &&
          index < sizeof(boot_slots) / sizeof(boot_slots[0]); ++index) {
         int32_t storage_result = pjs_storage_load_guest_named(
             &disk_package, boot_slots[index].file_name);
@@ -257,9 +394,14 @@ void kernel_main_phase1(void)
         PJS_RUNTIME_ERROR;
 
     initial_input.runtime_status = runtime_status;
-    pjs_core_set_boot_diagnostic(boot_source, boot_failure_stage,
-                                 boot_failure_code,
-                                 pjs_storage_sector_read_count());
+    if (runtime_from_catalog) {
+        pjs_core_set_app_diagnostic(
+            catalog_selection, catalog_count, pjs_storage_sector_read_count());
+    } else {
+        pjs_core_set_boot_diagnostic(boot_source, boot_failure_stage,
+                                     boot_failure_code,
+                                     pjs_storage_sector_read_count());
+    }
     if (pjs_core_step(&initial_input) < 0) panic_code(0x50314332u); /* P1C2 */
     uint32_t last_frame_us = render_and_present();
 

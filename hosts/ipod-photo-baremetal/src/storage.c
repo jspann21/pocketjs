@@ -20,6 +20,8 @@ static uint32_t storage_sector_reads;
 static uint32_t storage_first_failed_lba = UINT32_MAX;
 static const char guest_directory[11] = {'P','O','C','K','E','T','J','S',' ',' ',' '};
 static const char guest_filename[11] = {'A','P','P',' ',' ',' ',' ',' ','P','K','T'};
+static const char apps_directory[11] = {'A','P','P','S',' ',' ',' ',' ',' ',' ',' '};
+static const char package_extension[3] = {'P','K','T'};
 
 static bool ata_read_failed(uint32_t lba)
 {
@@ -162,6 +164,135 @@ int pjs_storage_load_guest(PjsStorageFile *file)
 {
     pjs_storage_reset_diagnostics();
     return pjs_storage_load_guest_named(file, guest_filename);
+}
+
+static bool app_name_valid(const char file_name[11])
+{
+    bool saw_character = false;
+    bool saw_space = false;
+    for (uint32_t index = 0u; index < 8u; ++index) {
+        char character = file_name[index];
+        if (character == ' ') {
+            saw_space = true;
+            continue;
+        }
+        if (saw_space) return false;
+        if (!((character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') ||
+              character == '_' || character == '-')) return false;
+        saw_character = true;
+    }
+    return saw_character && file_name[8] == 'P' &&
+           file_name[9] == 'K' && file_name[10] == 'T';
+}
+
+static int compare_app_names(const PjsStorageApp *left,
+                             const PjsStorageApp *right)
+{
+    for (uint32_t index = 0u; index < 11u; ++index) {
+        uint8_t a = (uint8_t)left->file_name[index];
+        uint8_t b = (uint8_t)right->file_name[index];
+        if (a < b) return -1;
+        if (a > b) return 1;
+    }
+    return 0;
+}
+
+int pjs_storage_discover_apps(PjsStorageCatalog *catalog)
+{
+    if (catalog == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    *catalog = (PjsStorageCatalog){0};
+    storage_error = 0u;
+    ata_prepare();
+
+    PjsFat32 fat = {0};
+    int rc = pjs_fat32_mount(&fat, ata_read_sector, 0);
+    if (rc != PJS_STORAGE_OK) goto failed;
+    uint32_t pocketjs_cluster = 0u;
+    rc = pjs_fat32_find_short_directory(
+        &fat, fat.root_cluster, guest_directory, &pocketjs_cluster);
+    if (rc != PJS_STORAGE_OK) goto failed;
+    uint32_t apps_cluster = 0u;
+    rc = pjs_fat32_find_short_directory(
+        &fat, pocketjs_cluster, apps_directory, &apps_cluster);
+    if (rc != PJS_STORAGE_OK) goto failed;
+    rc = pjs_fat32_list_short_files(
+        &fat, apps_cluster, package_extension, catalog->apps,
+        PJS_STORAGE_MAX_APPS, &catalog->count);
+    if (rc != PJS_STORAGE_OK) goto failed;
+
+    uint32_t write = 0u;
+    for (uint32_t read = 0u; read < catalog->count; ++read) {
+        if (!app_name_valid(catalog->apps[read].file_name) ||
+            catalog->apps[read].size > PJS_STORAGE_MAX_FILE_BYTES) continue;
+        if (write != read) catalog->apps[write] = catalog->apps[read];
+        ++write;
+    }
+    catalog->count = write;
+    for (uint32_t end = catalog->count; end > 1u; --end) {
+        for (uint32_t index = 1u; index < end; ++index) {
+            if (compare_app_names(&catalog->apps[index - 1u],
+                                  &catalog->apps[index]) <= 0) continue;
+            PjsStorageApp temporary = catalog->apps[index - 1u];
+            catalog->apps[index - 1u] = catalog->apps[index];
+            catalog->apps[index] = temporary;
+        }
+    }
+    return PJS_STORAGE_OK;
+
+failed:
+    storage_error = (uint32_t)(-rc);
+    return rc;
+}
+
+int pjs_storage_load_app(PjsStorageFile *file, const char file_name[11])
+{
+    if (file == 0 || file_name == 0 || !app_name_valid(file_name)) {
+        return PJS_STORAGE_ERR_ARGUMENT;
+    }
+    *file = (PjsStorageFile){0};
+    storage_error = 0u;
+    ata_prepare();
+
+    PjsFat32 fat = {0};
+    int rc = pjs_fat32_mount(&fat, ata_read_sector, 0);
+    if (rc != PJS_STORAGE_OK) goto failed;
+    uint32_t pocketjs_cluster = 0u;
+    rc = pjs_fat32_find_short_directory(
+        &fat, fat.root_cluster, guest_directory, &pocketjs_cluster);
+    if (rc != PJS_STORAGE_OK) goto failed;
+    uint32_t apps_cluster = 0u;
+    rc = pjs_fat32_find_short_directory(
+        &fat, pocketjs_cluster, apps_directory, &apps_cluster);
+    if (rc != PJS_STORAGE_OK) goto failed;
+    uint32_t expected = 0u;
+    rc = pjs_fat32_short_file_size_at(
+        &fat, apps_cluster, file_name, &expected);
+    if (rc != PJS_STORAGE_OK) goto failed;
+    if (expected == 0u || expected > PJS_STORAGE_MAX_FILE_BYTES) {
+        rc = PJS_STORAGE_ERR_TOO_LARGE;
+        goto failed;
+    }
+    uint8_t *bytes = pjs_heap_alloc(expected, 16u);
+    if (bytes == 0) {
+        rc = PJS_STORAGE_ERR_ALLOC;
+        goto failed;
+    }
+    uint32_t length = 0u;
+    rc = pjs_fat32_read_short_file_at(
+        &fat, apps_cluster, file_name, bytes, expected, &length);
+    if (rc != PJS_STORAGE_OK || length == 0u) {
+        pjs_heap_free(bytes);
+        if (rc == PJS_STORAGE_OK) rc = PJS_STORAGE_ERR_SHORT_READ;
+        goto failed;
+    }
+    file->bytes = bytes;
+    file->length = length;
+    return PJS_STORAGE_OK;
+
+failed:
+    storage_error = (uint32_t)(-rc);
+    return rc;
 }
 
 void pjs_storage_release(PjsStorageFile *file)
