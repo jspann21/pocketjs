@@ -140,6 +140,16 @@ impl<'a> JsonCursor<'a> {
         self.consume(expected).then_some(()).ok_or(PlanError::Syntax)
     }
 
+    fn comma_before_next(&mut self, closing: u8) -> Result<(), PlanError> {
+        self.expect(b',')?;
+        self.whitespace();
+        if self.bytes.get(self.offset) == Some(&closing) {
+            Err(PlanError::Syntax)
+        } else {
+            Ok(())
+        }
+    }
+
     fn string(&mut self) -> Result<&'a [u8], PlanError> {
         self.whitespace();
         if self.bytes.get(self.offset) != Some(&b'"') {
@@ -274,7 +284,7 @@ impl<'a> JsonCursor<'a> {
                     self.expect(b':')?;
                     self.skip_value(depth + 1)?;
                     if self.consume(b'}') { return Ok(()); }
-                    self.expect(b',')?;
+                    self.comma_before_next(b'}')?;
                 }
             }
             Some(b'[') => {
@@ -284,7 +294,7 @@ impl<'a> JsonCursor<'a> {
                 loop {
                     self.skip_value(depth + 1)?;
                     if self.consume(b']') { return Ok(()); }
-                    self.expect(b',')?;
+                    self.comma_before_next(b']')?;
                 }
             }
             Some(b't') if self.literal(b"true") => Ok(()),
@@ -317,7 +327,7 @@ fn parse_target(cursor: &mut JsonCursor<'_>, contract: &FixedPlanContract<'_>) -
         if bit != 0 && seen & bit != 0 { return Err(PlanError::DuplicateField); }
         seen |= bit;
         if cursor.consume(b'}') { break; }
-        cursor.expect(b',')?;
+        cursor.comma_before_next(b'}')?;
     }
     if seen != 3 { return Err(PlanError::MissingTarget); }
     Ok(())
@@ -356,7 +366,7 @@ fn parse_viewport(cursor: &mut JsonCursor<'_>, contract: &FixedPlanContract<'_>)
         if bit != 0 && seen & bit != 0 { return Err(PlanError::DuplicateField); }
         seen |= bit;
         if cursor.consume(b'}') { break; }
-        cursor.expect(b',')?;
+        cursor.comma_before_next(b'}')?;
     }
     if seen != 31 { return Err(PlanError::MissingViewport); }
     Ok(())
@@ -378,7 +388,7 @@ fn parse_features(cursor: &mut JsonCursor<'_>, contract: &FixedPlanContract<'_>)
         if seen & bit != 0 { return Err(PlanError::DuplicateField); }
         seen |= bit;
         if cursor.consume(b'}') { return Ok(()); }
-        cursor.expect(b',')?;
+        cursor.comma_before_next(b'}')?;
     }
 }
 
@@ -399,7 +409,7 @@ pub fn validate_fixed_plan(plan: &[u8], contract: &FixedPlanContract<'_>) -> Res
         if bit != 0 && seen & bit != 0 { return Err(PlanError::DuplicateField); }
         seen |= bit;
         if cursor.consume(b'}') { break; }
-        cursor.expect(b',')?;
+        cursor.comma_before_next(b'}')?;
     }
     cursor.whitespace();
     if cursor.offset != plan.len() { return Err(PlanError::Syntax); }

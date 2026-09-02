@@ -61,12 +61,22 @@ static uintptr_t block_end(const PjsHeapBlock *block)
 
 static bool block_sane(const PjsHeapBlock *block)
 {
-    if (block == 0 || block->magic != PJS_HEAP_BLOCK_MAGIC) return false;
+    if (block == 0) return false;
     uintptr_t address = (uintptr_t)block;
     if (address < heap_begin || address >= heap_end) return false;
     if ((address & (PJS_HEAP_MIN_ALIGN - 1u)) != 0u) return false;
+    if (heap_end - address < sizeof(PjsHeapBlock)) return false;
+    if (block->magic != PJS_HEAP_BLOCK_MAGIC) return false;
     if (block->span < header_bytes() + prefix_bytes() + 1u) return false;
-    return block_end(block) <= heap_end;
+    return block->span <= heap_end - address;
+}
+
+static bool next_link_sane(const PjsHeapBlock *block)
+{
+    PjsHeapBlock *next = block->next;
+    if (next == 0) return block_end(block) == heap_end;
+    return block_sane(next) && (uintptr_t)next == block_end(block) &&
+           next->previous == block;
 }
 
 bool pjs_heap_init(void *base, size_t length)
@@ -92,6 +102,7 @@ bool pjs_heap_init(void *base, size_t length)
 
 static void split_after(PjsHeapBlock *block, uintptr_t split)
 {
+    if (!next_link_sane(block)) return;
     split = align_up(split, PJS_HEAP_MIN_ALIGN);
     size_t minimum = header_bytes() + prefix_bytes() + PJS_HEAP_MIN_PAYLOAD;
     if (split <= (uintptr_t)block || block_end(block) - split < minimum) return;
@@ -116,7 +127,8 @@ void *pjs_heap_alloc(size_t size, size_t alignment)
     if (!alignment_valid(alignment) || heap_first == 0) return 0;
 
     for (PjsHeapBlock *block = heap_first; block != 0; block = block->next) {
-        if (!block_sane(block) || block->free == 0u) continue;
+        if (!block_sane(block) || !next_link_sane(block)) return 0;
+        if (block->free == 0u) continue;
         uintptr_t payload_start = (uintptr_t)block + header_bytes();
         uintptr_t user = align_up(payload_start + prefix_bytes(), alignment);
         if (user < payload_start || size > heap_end - user) return 0;
@@ -151,7 +163,7 @@ static PjsHeapPrefix *prefix_for(void *pointer)
 static void merge_next(PjsHeapBlock *block)
 {
     PjsHeapBlock *next = block->next;
-    if (next == 0 || next->free == 0u || !block_sane(next)) return;
+    if (next == 0 || !next_link_sane(block) || next->free == 0u) return;
     block->span += next->span;
     block->next = next->next;
     if (block->next != 0) block->next->previous = block;
@@ -173,7 +185,8 @@ void pjs_heap_free(void *pointer)
     prefix->magic = 0u;
     block->free = 1u;
     merge_next(block);
-    if (block->previous != 0 && block->previous->free != 0u) {
+    if (block->previous != 0 && block_sane(block->previous) &&
+        block->previous->next == block && block->previous->free != 0u) {
         block = block->previous;
         merge_next(block);
     }

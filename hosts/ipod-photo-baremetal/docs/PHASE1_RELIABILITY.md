@@ -4,7 +4,9 @@ This batch extends the qualified package-lineage path without adding package
 writes or FAT metadata mutation. **The firmware validates the package plan,
 runtime memory reserve, heap structure, and stack/heap guard bands before or
 during execution.** A live QuickJS frame failure records the crash and boots
-the embedded recovery package without waiting for a reboot.
+the embedded recovery package without waiting for a reboot. This recovery path
+covers QuickJS frame failures; native core/render faults retain the bounded
+panic path.
 
 ## Admission and memory contract
 

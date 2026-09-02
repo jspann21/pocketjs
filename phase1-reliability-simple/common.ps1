@@ -3,7 +3,7 @@ Set-StrictMode -Version Latest
 $env:PYTHONDONTWRITEBYTECODE = "1"
 
 $script:CandidateName = "pocketjs-a1099-phase1-reliability.ipod"
-$script:CandidateSha256 = "a36bdbbf716e7229526319673521d963e28899a1516a2416291168b8cd50be64"
+$script:CandidateSha256 = "3cc210a35b1b37dbc7058066378cee735698b5c81a308b806f0c7428c3473738"
 $script:TransactionName = ".pocketjs-reliability-state.json"
 $script:BackupName = ".pocketjs-reliability-backup"
 $script:ManagedFiles = @(
@@ -197,7 +197,19 @@ function Restore-LineageTransaction {
     if (-not (Test-Path -LiteralPath $paths.Backup -PathType Container)) {
         throw "Lineage backup is missing: $($paths.Backup)"
     }
-    foreach ($item in @($state.files)) {
+    $items = @($state.files)
+    if ($items.Count -ne $script:ManagedFiles.Count) {
+        throw "Transaction file manifest has the wrong number of entries."
+    }
+    $seen = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal)
+    foreach ($item in $items) {
+        $name = [string]$item.name
+        if ($script:ManagedFiles -cnotcontains $name -or -not $seen.Add($name)) {
+            throw "Transaction file manifest contains an invalid name: $name"
+        }
+    }
+    foreach ($item in $items) {
         $current = Join-Path $paths.Pocket ([string]$item.name)
         if ((Test-Path -LiteralPath $current) -and
             -not (Test-Path -LiteralPath $current -PathType Leaf)) {

@@ -3,8 +3,8 @@
   "status": "host-verified; hardware-pending",
   "candidate": {
     "file": "pocketjs-a1099-phase1-reliability.ipod",
-    "bytes": 1100196,
-    "sha256": "a36bdbbf716e7229526319673521d963e28899a1516a2416291168b8cd50be64"
+    "bytes": 1100516,
+    "sha256": "3cc210a35b1b37dbc7058066378cee735698b5c81a308b806f0c7428c3473738"
   },
   "packages": [
     {
@@ -61,8 +61,11 @@
     "host QuickJS generated guest",
     "scheduler, heap, power, damage ABI, FAT32, lineage and package checks",
     "container-valid bad-plan package construction and re-verification",
+    "native fixed-plan acceptance plus trailing-comma rejection harness",
+    "corrupted heap-link validation without an invalid dereference",
     "PowerShell package/state/Rockbox backup-stage-restore mock round trip",
-    "restore refusal for an externally changed rockbox.ipod"
+    "restore refusal for an externally changed rockbox.ipod",
+    "restore refusal for a tampered transaction file name"
   ],
   "scope": "Strict fixed-plan admission, 8 MiB runtime memory reserve, stack/heap guards, live embedded recovery, and existing lineage rollback. Physical power interruption remains unqualified."
 }
