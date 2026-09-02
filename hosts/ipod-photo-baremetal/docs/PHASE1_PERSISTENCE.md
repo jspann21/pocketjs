@@ -54,3 +54,10 @@ needed until the final verified restore.
 This gate does not expose persistence to JavaScript, promote packages, mutate
 FAT metadata, or qualify arbitrary app files, low-battery writes, suspend, or
 physical power interruption.
+
+## Qualification
+
+The exact candidate was physically qualified with all five expected lines.
+The committed update survived reboot, the intentionally uncommitted newer
+record was rejected on the following boot, the verified restore removed the
+transaction state, and Rockbox booted normally afterward.

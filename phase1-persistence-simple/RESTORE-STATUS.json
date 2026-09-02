@@ -1,0 +1,12 @@
+﻿{
+    "schema":  1,
+    "restoredAt":  "2026-09-01T21:53:02.8348533-04:00",
+    "mount":  "F:\\",
+    "targetSha256":  "1e41fb8fa8d9e669be03e390b9b9529cb92484138d7a4a0fbcc33266c4e0ffdd",
+    "backupExists":  false,
+    "state":  null,
+    "staleStateFiles":  [
+
+                        ],
+    "persistenceTransactionExists":  false
+}

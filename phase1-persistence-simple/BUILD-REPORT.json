@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "host-verified; hardware pending",
+  "status": "hardware-qualified",
   "candidate": {
     "file": "pocketjs-a1099-phase1-persistence.ipod",
     "bytes": 1123116,
@@ -34,6 +34,14 @@
     "PERS A0 G00003",
     "PERS L1 G00002"
   ],
+  "observedDeviceEvidence": [
+    "PERS L0 G00001",
+    "PERS C1 G00002",
+    "PERS L1 G00002",
+    "PERS A0 G00003",
+    "PERS L1 G00002"
+  ],
+  "restoredRockboxSha256": "1e41fb8fa8d9e669be03e390b9b9529cb92484138d7a4a0fbcc33266c4e0ffdd",
   "checks": [
     "ARMv4T Rust plus QuickJS firmware build",
     "static and Phase 1 image verification",
