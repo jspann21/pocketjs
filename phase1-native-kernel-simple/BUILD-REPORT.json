@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "status": "hardware-candidate",
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-native-kernel.ipod",
+    "bytes": 1103624,
+    "sha256": "75538890c9328a5fc3c4c718b49c40611af26f3ab0f4a43f5132fd3e954cc69c"
+  },
+  "package": {
+    "files": ["ACTIVE.PKT", "LASTGOOD.PKT", "APP.PKT"],
+    "bytesEach": 214056,
+    "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+    "packageHashFnv64": "0x23c3105ac6587d16",
+    "role": "previously qualified Alpha app and embedded recovery"
+  },
+  "stateSlots": [
+    {
+      "file": "STATE0.BIN",
+      "generation": 1,
+      "committed": true,
+      "sha256": "1b82ac80abc8cbea1b3777f0ade19795a398d1730f00b2ab0614443a2083b4ac"
+    },
+    {
+      "file": "STATE1.BIN",
+      "generation": 0,
+      "committed": false,
+      "sha256": "5721fb6065c6f602f5e77a4e5949573e95600d7d5e9542b05ec8e56cd66ebb17"
+    }
+  ],
+  "expectedDeviceEvidence": [
+    "PWR BAT",
+    "LCD WAKE",
+    "SHDN READY",
+    "PWR USB",
+    "automatic disk-mode mount"
+  ],
+  "checks": [
+    "ARMv4T Rust plus QuickJS firmware build",
+    "static and Phase 1 image verification",
+    "host QuickJS generated guest",
+    "scheduler, heap, filtered power, damage ABI, fragmented FAT32 and package checks",
+    "PowerShell package/state/Rockbox backup-stage-restore mock round trip"
+  ],
+  "scope": "LCD device-gate ownership with inherited shared clocks, reversible type-0 panel sleep/wake, filtered source pins, read-only shutdown preflight, bounded ATA idle observation, and PP5020 disk-mode marker reset. ATA standby, PMU standby, charger policy, rail control, and shared LCD clock selection remain disabled."
+}

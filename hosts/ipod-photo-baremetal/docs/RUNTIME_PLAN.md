@@ -65,6 +65,10 @@ two exact preallocated sectors and does not write packages or FAT metadata.
 Strict fixed-plan admission, memory reserve/guard enforcement, live embedded
 recovery, and the combined rollback batch are documented in
 `PHASE1_RELIABILITY.md`.
+LCD device-gate ownership, filtered power transitions, reversible panel
+sleep/wake, shutdown preflight, and the terminal disk-mode handoff are
+documented in `PHASE1_POWER_DISK_HANDOFF.md`. Shared LCD clock selection, ATA
+standby, and PMU standby remain outside that gate.
 Physical power interruption remains a separate, unqualified boundary.
 
 ### 5. Optional capabilities

@@ -1,0 +1,11 @@
+OBSERVED RESULTS
+
+Initial power line: PWR ___
+After center: LCD ____
+After Play: SHDN _____
+After USB connect: PWR ___
+Screen slept and returned cleanly: YES / NO
+Automatic disk mode mounted F:\: YES / NO
+RESTORE VERIFIED: YES / NO
+Rockbox booted after restore: YES / NO
+Unexpected:

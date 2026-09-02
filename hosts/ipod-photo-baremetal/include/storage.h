@@ -23,6 +23,28 @@
 #define PJS_STORAGE_ERR_STATE -11
 #define PJS_STORAGE_ERR_VERIFY -12
 
+/* A handoff is intentionally shorter than the normal ATA command timeout:
+ * the caller must retain control of the running firmware if the device does
+ * not quiesce promptly. */
+#define PJS_STORAGE_ATA_QUIESCE_TIMEOUT_US 250000u
+
+enum {
+    PJS_STORAGE_ATA_HANDOFF_NOT_OWNED = 0u,
+    PJS_STORAGE_ATA_HANDOFF_READY = 1u,
+    PJS_STORAGE_ATA_HANDOFF_BUSY = 2u,
+    PJS_STORAGE_ATA_HANDOFF_DATA = 3u,
+    PJS_STORAGE_ATA_HANDOFF_FAULT = 4u,
+    PJS_STORAGE_ATA_HANDOFF_TIMEOUT = 5u,
+    PJS_STORAGE_ATA_HANDOFF_UNKNOWN = 6u,
+};
+
+typedef struct {
+    uint8_t state;
+    uint8_t ata_status;
+    uint16_t polls;
+    uint32_t elapsed_us;
+} PjsStorageDiskHandoff;
+
 typedef bool (*PjsSectorReadFn)(void *context, uint32_t lba,
                                 uint8_t sector[PJS_STORAGE_SECTOR_BYTES]);
 
@@ -146,6 +168,21 @@ void pjs_storage_release(PjsStorageFile *file);
 uint32_t pjs_storage_last_error(void);
 uint32_t pjs_storage_sector_read_count(void);
 uint32_t pjs_storage_first_failed_lba(void);
+
+/* Classify an ATA status byte without touching the task-file status register.
+ * The handoff path uses ALT_STATUS so an error/status read cannot acknowledge
+ * an in-flight request. */
+uint8_t pjs_storage_ata_status_classify(uint8_t status);
+
+/* Bounded, read-only running-firmware handoff preparation. These functions
+ * never issue an ATA command, write a sector, alter FAT metadata, or control
+ * PMU/charger/rail state. The caller owns the terminal reset after a READY
+ * result and must clear the marker if it aborts that reset. */
+int pjs_storage_ata_quiesce(PjsStorageDiskHandoff *handoff);
+int pjs_storage_prepare_disk_handoff(PjsStorageDiskHandoff *handoff);
+void pjs_storage_disk_handoff_clear(void);
+bool pjs_storage_disk_handoff_armed(void);
+
 int pjs_storage_state_load(PjsPersistenceState *state);
 int pjs_storage_state_write(PjsPersistenceState *state, bool publish,
                             uint32_t *attempted_slot,

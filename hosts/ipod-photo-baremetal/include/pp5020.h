@@ -112,7 +112,9 @@ static inline void pp_gpio_clear(volatile uint32_t *atomic_reg, uint32_t mask)
 /* A1099 backlight PWM. */
 #define PP_PWM_BACKLIGHT MMIO32(0x7000a010u)
 
-/* PP5020 IDE host and primary ATA task file. This gate is read-only. */
+/* PP5020 IDE host and primary ATA task file. Package reads and the running
+ * handoff quiesce path use the read-only ALT_STATUS/DATA view; preallocated
+ * state writes remain behind their separate source gate. */
 #define PP_IDE0_PRI_TIMING0 MMIO32(0xc3000000u)
 #define PP_IDE0_PRI_TIMING1 MMIO32(0xc3000004u)
 #define PP_IDE0_CFG         MMIO32(0xc3000028u)
@@ -158,6 +160,23 @@ static inline void pp_reboot(void)
     for (;;) {
         __asm__ volatile("nop");
     }
+}
+
+static inline void pp_reboot_disk_mode(void)
+{
+    /* Rockbox's PP5020 iPod boot and USB handoff paths use this exact
+     * boot-ROM marker. PP5022 uses a different address; A1099 is PP5020. */
+    static const uint8_t marker[21] = {
+        'd','i','s','k','m','o','d','e',0,0,
+        'h','o','t','s','t','u','f','f',0,0,1
+    };
+    volatile uint8_t *destination =
+        (volatile uint8_t *)(uintptr_t)0x40017f00u;
+    for (uint32_t index = 0u; index < sizeof(marker); ++index) {
+        destination[index] = marker[index];
+    }
+    __asm__ volatile("" ::: "memory");
+    pp_reboot();
 }
 
 #endif

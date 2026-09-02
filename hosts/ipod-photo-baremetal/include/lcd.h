@@ -8,6 +8,8 @@
 #include "core_bridge.h"
 
 bool lcd_init(void);
+bool lcd_sleep(void);
+bool lcd_wake(void);
 bool lcd_present(const uint16_t *pixels, size_t pixel_count);
 bool lcd_present_damage(const uint16_t *pixels, size_t pixel_count,
                         const PjsCoreDamagePlan *damage);

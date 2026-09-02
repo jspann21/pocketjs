@@ -1,0 +1,44 @@
+POCKETJS IPOD PHOTO - NATIVE KERNEL HANDOFF CAMPAIGN
+
+This is one install and one boot.
+
+1. Connect the restored iPod in disk mode. Confirm it is F:\.
+2. Open PowerShell in this folder and run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+3. Safely eject, disconnect the cable, and boot. Wait for:
+
+   PWR BAT
+
+4. Press center once. The screen should go dark briefly, return to the same
+   app, and show:
+
+   LCD WAKE
+
+5. Press Play once. It should show:
+
+   SHDN READY
+
+6. Connect the USB cable while PocketJS is still running. Do not press any
+   button until the line changes to:
+
+   PWR USB
+
+7. Hold Menu+Play for two seconds. DISK GO should appear briefly, the screen
+   should turn off, and the iPod should mount itself at F:\ in disk mode.
+8. As soon as F:\ appears, run:
+
+   .\RESTORE.ps1
+
+9. Safely eject and confirm normal Rockbox boot.
+
+Stop if KERN E## appears or the screen does not recover. If the automatic
+disk-mode handoff fails, enter disk mode with Select+Play, reconnect, and run
+.\RESTORE.ps1.
+
+Return only the four lines from steps 3-6, whether the screen slept and
+returned cleanly, whether automatic disk mode mounted F:\, whether restore
+verified, whether Rockbox booted, and anything unexpected. A photo is needed
+only for a missing or unreadable line.

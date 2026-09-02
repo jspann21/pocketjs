@@ -35,8 +35,16 @@
 #define PJS_PHASE1_RELIABILITY_GATE 0
 #endif
 
+#ifndef PJS_PHASE1_NATIVE_KERNEL_GATE
+#define PJS_PHASE1_NATIVE_KERNEL_GATE 0
+#endif
+
 #if PJS_PHASE1_RELIABILITY_GATE && !PJS_PHASE1_LINEAGE_GATE
 #error "The reliability gate requires the lineage gate"
+#endif
+
+#if PJS_PHASE1_NATIVE_KERNEL_GATE && !PJS_PHASE1_LINEAGE_GATE
+#error "The native kernel gate requires the lineage gate"
 #endif
 
 #define PJS_PHASE1_PLACEHOLDER_BATTERY_MV 3800u
@@ -111,6 +119,7 @@ static void initialize_heap(void)
     }
 }
 
+#if PJS_PHASE1_RELIABILITY_GATE || PJS_PHASE1_NATIVE_KERNEL_GATE
 static bool memory_integrity_ok(void)
 {
     if (!pjs_heap_validate()) return false;
@@ -120,7 +129,9 @@ static bool memory_integrity_ok(void)
     }
     return true;
 }
+#endif
 
+#if PJS_PHASE1_RELIABILITY_GATE
 static bool runtime_memory_admitted(void)
 {
     if (!memory_integrity_ok()) return false;
@@ -128,6 +139,7 @@ static bool runtime_memory_admitted(void)
     pjs_heap_stats(&stats);
     return stats.largest_free >= PJS_RUNTIME_MIN_LARGEST_FREE;
 }
+#endif
 
 static int32_t clamp_wheel_delta(int32_t value)
 {
@@ -224,6 +236,42 @@ static uint32_t render_and_present(void)
     }
     return timer_now_us() - started;
 }
+
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+static uint32_t kernel_power_mode(uint8_t flags)
+{
+    if ((flags & PJS_POWER_USB) != 0u) return 2u;
+    if ((flags & PJS_POWER_FIREWIRE) != 0u) return 3u;
+    return 1u;
+}
+
+static bool kernel_lcd_cycle(void)
+{
+    backlight_enable(false);
+    if (!lcd_sleep()) {
+        backlight_enable(true);
+        return false;
+    }
+    timer_delay_us(750000u);
+    if (!lcd_wake() || !lcd_present(framebuffer, PJS_FRAME_PIXELS)) return false;
+    backlight_enable(true);
+    return true;
+}
+
+static uint32_t kernel_shutdown_preflight(bool runtime_active,
+                                          bool lineage_ready,
+                                          uint8_t filtered_power)
+{
+    if (!runtime_active || !lineage_ready || !memory_integrity_ok()) return 1u;
+    if (!lcd_ready()) return 2u;
+    if ((filtered_power & PJS_POWER_SOURCE_UNSTABLE) != 0u) return 3u;
+    PjsStorageDiskHandoff handoff = {0};
+    if (pjs_storage_ata_quiesce(&handoff) != PJS_STORAGE_OK) {
+        return 10u + handoff.state;
+    }
+    return 0u;
+}
+#endif
 
 #if PJS_PHASE1_LINEAGE_GATE
 static const char *package_name_for_source(uint32_t source)
@@ -724,6 +772,10 @@ void kernel_main_phase1(void)
         last_frame_us = render_and_present();
     }
 #endif
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+    pjs_core_set_kernel_diagnostic(0u, 0u);
+    last_frame_us = render_and_present();
+#endif
 
     /* Start the 60 Hz clock only after the expensive initial frame. */
     scheduler_global_reset();
@@ -734,6 +786,16 @@ void kernel_main_phase1(void)
     /* Keep the already-qualified boot frame independent from I2C. Telemetry
      * starts only after the UI, cache, timer and input paths are alive. */
     power_telemetry_init();
+#endif
+
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+    PjsPowerSourceFilter source_filter;
+    power_source_filter_init(&source_filter);
+    uint8_t filtered_power = PJS_POWER_SOURCE_UNSTABLE;
+    uint32_t last_power_mode = UINT32_MAX;
+    bool lcd_tested = false;
+    bool shutdown_ready = false;
+    uint32_t next_source_sample = timer_now_us();
 #endif
 
     int32_t pending_wheel_delta = 0;
@@ -748,7 +810,7 @@ void kernel_main_phase1(void)
 #if PJS_PHASE1_RELIABILITY_GATE
     uint32_t next_memory_check = now + 1000000u;
 #endif
-#if PJS_PHASE1_PERSISTENCE_GATE
+#if PJS_PHASE1_PERSISTENCE_GATE || PJS_PHASE1_NATIVE_KERNEL_GATE
     uint32_t previous_buttons = input.buttons;
 #endif
 
@@ -756,9 +818,11 @@ void kernel_main_phase1(void)
         /* This path remains hot while no frame is required. It samples input
          * continuously and preserves wheel motion until the next fixed step. */
         input_poll(&input);
-#if PJS_PHASE1_PERSISTENCE_GATE
+#if PJS_PHASE1_PERSISTENCE_GATE || PJS_PHASE1_NATIVE_KERNEL_GATE
         uint32_t pressed = input.buttons & ~previous_buttons;
         previous_buttons = input.buttons;
+#endif
+#if PJS_PHASE1_PERSISTENCE_GATE
         if (persistence.available != 0u &&
             (pressed & PJS_BUTTON_SELECT) != 0u) {
             uint32_t slot = 0u;
@@ -788,9 +852,52 @@ void kernel_main_phase1(void)
             }
         }
 #endif
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+        if ((pressed & PJS_BUTTON_SELECT) != 0u &&
+            (input.buttons & PJS_BUTTON_MENU) == 0u) {
+            if (kernel_lcd_cycle()) {
+                lcd_tested = true;
+                shutdown_ready = false;
+                pjs_core_set_kernel_diagnostic(4u, 0u);
+            } else {
+                pjs_core_set_kernel_diagnostic(8u, 20u);
+            }
+        } else if ((pressed & PJS_BUTTON_PLAY) != 0u &&
+            (input.buttons & PJS_BUTTON_MENU) == 0u) {
+            uint32_t error = lcd_tested ? kernel_shutdown_preflight(
+                runtime_active,
+                lineage_ready &&
+                    lineage.record.phase == PJS_LINEAGE_PHASE_RUNNING,
+                filtered_power) : 4u;
+            if (error == 0u) {
+                shutdown_ready = true;
+                pjs_core_set_kernel_diagnostic(5u, 0u);
+            } else {
+                shutdown_ready = false;
+                pjs_core_set_kernel_diagnostic(8u, error);
+            }
+        }
+#endif
         pending_wheel_delta = clamp_wheel_delta(
             pending_wheel_delta + (int32_t)input.wheel_delta);
         now = timer_now_us();
+
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+        if ((int32_t)(now - next_source_sample) >= 0) {
+            PjsPowerSourceSample sample = {0};
+            power_source_sample_read_only(&sample);
+            filtered_power = power_source_filter_update(
+                &source_filter, sample.flags, sample.valid_mask);
+            if ((filtered_power & PJS_POWER_SOURCE_UNSTABLE) == 0u) {
+                uint32_t mode = kernel_power_mode(filtered_power);
+                if (mode != last_power_mode) {
+                    last_power_mode = mode;
+                    pjs_core_set_kernel_diagnostic(mode, 0u);
+                }
+            }
+            next_source_sample = now + 100000u;
+        }
+#endif
 
 #if PJS_PHASE1_RELIABILITY_GATE
         if ((int32_t)(now - next_memory_check) >= 0) {
@@ -803,6 +910,18 @@ void kernel_main_phase1(void)
         if ((input.buttons & chord) == chord) {
             if (exit_chord_start == 0u) exit_chord_start = now;
             if ((uint32_t)(now - exit_chord_start) >= 2000000u) {
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+                bool usb_ready = (filtered_power &
+                    (PJS_POWER_USB | PJS_POWER_SOURCE_UNSTABLE)) == PJS_POWER_USB;
+                if (!shutdown_ready || !usb_ready) {
+                    pjs_core_set_kernel_diagnostic(
+                        8u, shutdown_ready ? 31u : 30u);
+                    exit_chord_start = now;
+                    continue;
+                }
+                pjs_core_set_kernel_diagnostic(6u, 0u);
+                (void)render_and_present();
+#endif
 #if PJS_PHASE1_LINEAGE_GATE
                 if (lineage_ready &&
                     lineage.record.phase == PJS_LINEAGE_PHASE_RUNNING) {
@@ -813,12 +932,44 @@ void kernel_main_phase1(void)
                     clean.trial_hash_high = 0u;
                     clean.failure_stage = PJS_BOOT_FAILURE_NONE;
                     clean.failure_code = 0u;
-                    (void)pjs_storage_lineage_write(&lineage, &clean);
+                    if (pjs_storage_lineage_write(&lineage, &clean) !=
+                        PJS_STORAGE_OK) {
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+                        pjs_core_set_kernel_diagnostic(8u, 32u);
+                        exit_chord_start = now;
+                        continue;
+#endif
+                    }
                 }
+#endif
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+                PjsStorageDiskHandoff handoff = {0};
+                if (pjs_storage_prepare_disk_handoff(&handoff) !=
+                        PJS_STORAGE_OK ||
+                    !pjs_storage_disk_handoff_armed()) {
+                    pjs_storage_disk_handoff_clear();
+                    pjs_core_set_kernel_diagnostic(
+                        8u, 40u + handoff.state);
+                    exit_chord_start = now;
+                    continue;
+                }
+                pjs_core_set_kernel_diagnostic(7u, 0u);
+                (void)render_and_present();
+                /* Match Rockbox's two-second PP5020 handoff settling window,
+                 * without issuing its ATA standby command in this gate. */
+                timer_delay_us(2000000u);
+                qjs_runtime_shutdown();
+                pjs_storage_release(&disk_package);
 #endif
                 timer_irq_stop();
                 irq_disable_global();
+#if PJS_PHASE1_NATIVE_KERNEL_GATE
+                backlight_enable(false);
+                (void)lcd_sleep();
+                pp_reboot_disk_mode();
+#else
                 pp_reboot();
+#endif
             }
         } else {
             exit_chord_start = 0u;

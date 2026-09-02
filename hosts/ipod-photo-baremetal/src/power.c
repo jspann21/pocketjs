@@ -99,6 +99,91 @@ uint8_t power_source_flags_read(void)
     return flags;
 }
 
+void power_source_sample_read_only(PjsPowerSourceSample *sample)
+{
+    if (sample == 0) return;
+
+    uint32_t gpioc = PP_GPIOC_INPUT_VAL;
+    uint32_t gpiod = PP_GPIOD_INPUT_VAL;
+    uint32_t gpo32_input = PP_GPO32_INPUT_VAL;
+    uint8_t valid = (uint8_t)(PJS_POWER_FIREWIRE | PJS_POWER_USB);
+    /* Do not claim a charging state when the inherited firmware left the
+     * LTC4066 indication pin unconfigured. This read is observational; the
+     * read-only campaign must not enable the pin as a side effect. */
+    if ((PP_GPO32_INPUT_ENABLE & 0x01u) != 0u) {
+        valid = (uint8_t)(valid | PJS_POWER_CHARGING);
+    }
+    sample->flags = (uint8_t)(power_decode_source_flags(
+        gpioc, gpiod, gpo32_input) & valid);
+    sample->valid_mask = valid;
+}
+
+uint8_t power_source_flags_read_only(void)
+{
+    PjsPowerSourceSample sample = {0};
+    power_source_sample_read_only(&sample);
+    if (sample.valid_mask != PJS_POWER_SOURCE_MASK) {
+        return (uint8_t)(sample.flags | PJS_POWER_SOURCE_UNSTABLE);
+    }
+    return sample.flags;
+}
+
+void power_source_filter_init(PjsPowerSourceFilter *filter)
+{
+    if (filter == 0) return;
+    *filter = (PjsPowerSourceFilter){0};
+}
+
+uint8_t power_source_filter_update(PjsPowerSourceFilter *filter,
+                                   uint8_t raw_flags, uint8_t valid_mask)
+{
+    if (filter == 0) return PJS_POWER_SOURCE_UNSTABLE;
+
+    const uint8_t source_mask = (uint8_t)PJS_POWER_SOURCE_MASK;
+    uint8_t valid = (uint8_t)(valid_mask & source_mask);
+    uint8_t sample = (uint8_t)(raw_flags & valid);
+    if (filter->samples != UINT32_MAX) ++filter->samples;
+
+    /* A source that becomes unobservable must not remain latched as present.
+     * Keep the other pins' qualified values while reporting uncertainty. */
+    filter->stable_flags &= valid;
+    if (filter->valid_mask != valid) {
+        filter->valid_mask = valid;
+        filter->candidate_flags = sample;
+        filter->candidate_samples = 1u;
+        filter->qualified = 0u;
+    } else if (filter->qualified != 0u &&
+               (filter->stable_flags & valid) == sample) {
+        filter->candidate_flags = sample;
+        filter->candidate_samples = 0u;
+    } else {
+        if (filter->candidate_flags != sample ||
+            filter->candidate_samples == 0u) {
+            filter->candidate_flags = sample;
+            filter->candidate_samples = 1u;
+        } else if (filter->candidate_samples < 0xffu) {
+            ++filter->candidate_samples;
+        }
+        if (filter->candidate_samples >= PJS_POWER_SOURCE_FILTER_SAMPLES) {
+            if ((filter->stable_flags & valid) != sample &&
+                filter->transitions != UINT32_MAX) {
+                ++filter->transitions;
+            }
+            filter->stable_flags = (uint8_t)(
+                (filter->stable_flags & (uint8_t)~valid) | sample);
+            filter->candidate_samples = 0u;
+            filter->qualified = 1u;
+        }
+    }
+
+    uint8_t result = (uint8_t)(filter->stable_flags & source_mask);
+    if (valid != source_mask || filter->qualified == 0u ||
+        filter->candidate_samples != 0u) {
+        result = (uint8_t)(result | PJS_POWER_SOURCE_UNSTABLE);
+    }
+    return result;
+}
+
 void power_telemetry_init(void)
 {
     recover_bus();

@@ -542,6 +542,29 @@ pub extern "C" fn pjs_core_set_lineage_diagnostic(
 }
 
 #[no_mangle]
+pub extern "C" fn pjs_core_set_kernel_diagnostic(mode: u32, error: u32) {
+    let Some(state) = (unsafe { STATE.as_mut() }) else {
+        return;
+    };
+    let (text, color) = match mode {
+        0 => (String::from("PWR WAIT"), abgr(142, 75, 0, 255)),
+        1 => (String::from("PWR BAT"), abgr(0, 92, 110, 255)),
+        2 => (String::from("PWR USB"), abgr(16, 112, 72, 255)),
+        3 => (String::from("PWR FIRE"), abgr(16, 112, 72, 255)),
+        4 => (String::from("LCD WAKE"), abgr(16, 112, 72, 255)),
+        5 => (String::from("SHDN READY"), abgr(16, 112, 72, 255)),
+        6 => (String::from("DISK WAIT"), abgr(142, 75, 0, 255)),
+        7 => (String::from("DISK GO"), abgr(96, 42, 150, 255)),
+        _ => {
+            let mut output = String::from("KERN E");
+            push_fixed_decimal(&mut output, error, &[10, 1]);
+            (output, abgr(150, 20, 38, 255))
+        }
+    };
+    set_boot_diagnostic_text(state, &text, color);
+}
+
+#[no_mangle]
 pub extern "C" fn pjs_core_init() -> i32 {
     unsafe {
         if !STATE.is_null() {

@@ -10,6 +10,7 @@
 
 #define LCD_STATE_COLD  0x4c434400u
 #define LCD_STATE_READY 0x4c43444fu
+#define LCD_STATE_ASLEEP 0x4c434453u
 #define LCD_MAX_BLOCK_BYTES 0x10000u
 #define LCD_STAGING_PIXELS (LCD_MAX_BLOCK_BYTES / 2u)
 
@@ -51,6 +52,32 @@ static bool command_data(uint16_t command, uint16_t data)
         PP_LCD2_PORT = PP_LCD2_DATA_MASK | (data & 0xffu);
     }
     return true;
+}
+
+static bool initialize_panel(void)
+{
+    if ((panel_type & 1u) != 0u) return false;
+    return command_data(0xefu, 0x0000u) &&
+           command_data(0x01u, 0x0000u) &&
+           command_data(0x80u, 0x0001u) &&
+           command_data(0x10u, 0x000cu) &&
+           command_data(0x18u, 0x0006u) &&
+           command_data(0x7eu, 0x0004u) &&
+           command_data(0x7eu, 0x0005u) &&
+           command_data(0x7fu, 0x0001u);
+}
+
+static bool claim_bridge(void)
+{
+    /* Own only the PP5020 LCD device gate. The shared clock-source registers
+     * remain at the reversible loader's known-good selection. */
+    PP_DEV_EN |= PP_DEV_LCD;
+    if (!wait_port()) return false;
+    PP_DEV_RS |= PP_DEV_LCD;
+    timer_delay_us(1u);
+    PP_DEV_RS &= ~PP_DEV_LCD;
+    timer_delay_us(1000u);
+    return wait_port();
 }
 
 static bool setup_region(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
@@ -165,23 +192,27 @@ bool lcd_init(void)
     panel_type = (uint8_t)PJS_A1099_LCD_TYPE;
 #endif
 
-    /* The installed Apple-compatible bootloader already supplies the LCD
-     * bridge clock for the first hardware probe. We only issue the panel's
-     * qualified controller sequence here; cold-boot clock ownership is the
-     * next board-support gate. */
-    if ((panel_type & 1u) == 0u) {
-        if (!command_data(0xefu, 0x0000u) ||
-            !command_data(0x01u, 0x0000u) ||
-            !command_data(0x80u, 0x0001u) ||
-            !command_data(0x10u, 0x000cu) ||
-            !command_data(0x18u, 0x0006u) ||
-            !command_data(0x7eu, 0x0004u) ||
-            !command_data(0x7eu, 0x0005u) ||
-            !command_data(0x7fu, 0x0001u)) {
-            return false;
-        }
-    }
+    if (!claim_bridge() || !initialize_panel()) return false;
 
+    lcd_state = LCD_STATE_READY;
+    return true;
+}
+
+bool lcd_sleep(void)
+{
+    if (lcd_state != LCD_STATE_READY || (panel_type & 1u) != 0u ||
+        !wait_port()) return false;
+    if (!command_data(0xefu, 0x0000u) ||
+        !command_data(0x80u, 0x0000u)) return false;
+    timer_delay_us(1000u);
+    if (!command_data(0x01u, 0x0001u)) return false;
+    lcd_state = LCD_STATE_ASLEEP;
+    return true;
+}
+
+bool lcd_wake(void)
+{
+    if (lcd_state != LCD_STATE_ASLEEP || !initialize_panel()) return false;
     lcd_state = LCD_STATE_READY;
     return true;
 }

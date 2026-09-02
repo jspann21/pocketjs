@@ -33,6 +33,8 @@ static uint32_t state_lbas[2];
 static bool state_lbas_ready;
 static bool ata_transaction_active;
 static uint32_t ata_transaction_deadline;
+static bool ata_owned;
+static bool disk_handoff_armed;
 
 static bool ata_read_failed(uint32_t lba)
 {
@@ -101,6 +103,89 @@ static void ata_prepare(void)
     PP_IDE0_PRI_TIMING1 = 0x80002150u;
     PP_ATA_CONTROL = 0x02u; /* nIEN: keep ATA IRQ delivery disabled. */
     ata_delay_400ns();
+    ata_owned = true;
+}
+
+uint8_t pjs_storage_ata_status_classify(uint8_t status)
+{
+    /* DRQ wins over BSY so a pending data phase can never be mistaken for an
+     * idle device. The handoff path must refuse rather than discard a word. */
+    if ((status & ATA_STATUS_DRQ) != 0u) {
+        return PJS_STORAGE_ATA_HANDOFF_DATA;
+    }
+    if ((status & ATA_STATUS_BSY) != 0u) {
+        return PJS_STORAGE_ATA_HANDOFF_BUSY;
+    }
+    if ((status & (ATA_STATUS_DF | ATA_STATUS_ERR)) != 0u) {
+        return PJS_STORAGE_ATA_HANDOFF_FAULT;
+    }
+    if ((status & ATA_STATUS_RDY) != 0u) {
+        return PJS_STORAGE_ATA_HANDOFF_READY;
+    }
+    return PJS_STORAGE_ATA_HANDOFF_UNKNOWN;
+}
+
+int pjs_storage_ata_quiesce(PjsStorageDiskHandoff *handoff)
+{
+    if (handoff == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    *handoff = (PjsStorageDiskHandoff){0};
+    if (!ata_owned) {
+        /* No ATA command has been issued by this image. Avoid touching an
+         * inherited controller just to prove that it is idle. */
+        handoff->state = PJS_STORAGE_ATA_HANDOFF_NOT_OWNED;
+        return PJS_STORAGE_OK;
+    }
+    if (ata_transaction_active) {
+        handoff->state = PJS_STORAGE_ATA_HANDOFF_BUSY;
+        return PJS_STORAGE_ERR_ATA;
+    }
+
+    uint32_t started = timer_now_us();
+    for (;;) {
+        uint8_t status = PP_ATA_ALT_STATUS;
+        handoff->ata_status = status;
+        if (handoff->polls != UINT16_MAX) ++handoff->polls;
+        uint8_t state = pjs_storage_ata_status_classify(status);
+        if (state == PJS_STORAGE_ATA_HANDOFF_READY) {
+            handoff->state = state;
+            handoff->elapsed_us = (uint32_t)(timer_now_us() - started);
+            return PJS_STORAGE_OK;
+        }
+        if (state != PJS_STORAGE_ATA_HANDOFF_BUSY) {
+            handoff->state = state;
+            handoff->elapsed_us = (uint32_t)(timer_now_us() - started);
+            return PJS_STORAGE_ERR_ATA;
+        }
+        uint32_t now = timer_now_us();
+        if ((uint32_t)(now - started) >=
+            PJS_STORAGE_ATA_QUIESCE_TIMEOUT_US) {
+            handoff->state = PJS_STORAGE_ATA_HANDOFF_TIMEOUT;
+            handoff->elapsed_us = (uint32_t)(now - started);
+            return PJS_STORAGE_ERR_ATA;
+        }
+    }
+}
+
+int pjs_storage_prepare_disk_handoff(PjsStorageDiskHandoff *handoff)
+{
+    if (handoff == 0) return PJS_STORAGE_ERR_ARGUMENT;
+    disk_handoff_armed = false;
+    int rc = pjs_storage_ata_quiesce(handoff);
+    if (rc != PJS_STORAGE_OK) return rc;
+    /* NOT_OWNED is a valid result: the running image has no outstanding ATA
+     * operation. The terminal reset remains the caller's responsibility. */
+    disk_handoff_armed = true;
+    return PJS_STORAGE_OK;
+}
+
+void pjs_storage_disk_handoff_clear(void)
+{
+    disk_handoff_armed = false;
+}
+
+bool pjs_storage_disk_handoff_armed(void)
+{
+    return disk_handoff_armed;
 }
 
 static bool ata_read_sector(void *context, uint32_t lba,
