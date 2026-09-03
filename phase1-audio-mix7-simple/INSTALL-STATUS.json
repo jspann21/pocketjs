@@ -1,0 +1,46 @@
+﻿{
+    "schema":  1,
+    "verifiedAt":  "2026-09-02T20:29:45.2245245-04:00",
+    "mount":  "F:\\",
+    "candidate":  {
+                      "file":  "pocketjs-a1099-phase1-audio-mix7.ipod",
+                      "sha256":  "f39611516b7c1602628f4e86820ad8147a3e4dc633f985d9aeb2c1b557007a8b"
+                  },
+    "stagedFiles":  {
+                        "ACTIVE.PKT":  "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+                        "LASTGOOD.PKT":  "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+                        "APP.PKT":  "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+                        "STATE0.BIN":  "1b82ac80abc8cbea1b3777f0ade19795a398d1730f00b2ab0614443a2083b4ac",
+                        "STATE1.BIN":  "5721fb6065c6f602f5e77a4e5949573e95600d7d5e9542b05ec8e56cd66ebb17"
+                    },
+    "handoff":  {
+                    "requestedPath":  "F:\\",
+                    "directory":  "F:\\.rockbox",
+                    "targetExists":  true,
+                    "targetSha256":  "f39611516b7c1602628f4e86820ad8147a3e4dc633f985d9aeb2c1b557007a8b",
+                    "backupExists":  true,
+                    "backupSha256":  "8761a91b6441d5b39a2ff541f456ee57a39f108ff94a706894a3785c87f60e9f",
+                    "state":  {
+                                  "version":  2,
+                                  "directory":  "F:\\.rockbox",
+                                  "target":  "rockbox.ipod",
+                                  "backup":  "rockbox.ipod.pocketjs-backup",
+                                  "original":  {
+                                                   "bytes":  1173148,
+                                                   "sha256":  "8761a91b6441d5b39a2ff541f456ee57a39f108ff94a706894a3785c87f60e9f",
+                                                   "imageBytes":  1173140,
+                                                   "imageSha256":  "14796bd7f54f2875bb8833a03b8399ef4fc223825afccf9f688b3dc3d341a071"
+                                               },
+                                  "probe":  {
+                                                "path":  "C:\\Users\\ajrty\\Desktop\\Projects\\pocketjs\\phase1-audio-mix7-simple\\pocketjs-a1099-phase1-audio-mix7.ipod",
+                                                "bytes":  1123964,
+                                                "sha256":  "f39611516b7c1602628f4e86820ad8147a3e4dc633f985d9aeb2c1b557007a8b",
+                                                "imageBytes":  1123956,
+                                                "imageSha256":  "ff4fa0a51b1190d90ea0d2638ecac8edacadffa10a9c01657652fde9ecfc4228"
+                                            }
+                              },
+                    "staleStateFiles":  [
+
+                                        ]
+                }
+}

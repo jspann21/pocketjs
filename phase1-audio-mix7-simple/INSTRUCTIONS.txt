@@ -1,0 +1,75 @@
+POCKETJS IPOD PHOTO - FOUR-STREAM MIXER BATCH, REVISION 7
+
+Hardware-qualified on 2026-09-02 following passed streaming revision 2.
+The procedure below is retained for reproducing that qualification.
+Revision 6 played mixed sound, then MIX E53 (producer missed its deadline).
+This revision uses the PP5020 80 MHz audio boost from our Rockbox reference,
+with its PLL settling sequence corroborated against RetailOS. It restores
+the inherited clock after the batch, cancel, or lifecycle stop. Clock register
+readback is checked automatically. Strict output-underrun checks remain.
+Use charged battery and wired headphones, not an amplifier or dock line-out.
+Start with earpieces away from your ears. Volume remains fixed low in hardware;
+the wheel controls the app, not headphone volume. Stop on loud/abnormal sound.
+
+1. From THIS folder, with the iPod in disk mode at F:\, run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\INSTALL.ps1
+
+2. Safely eject, unplug USB, and boot. Hold Left+Right together for one second
+   with other buttons released, then release both completely.
+
+3. Let the approximately 16-20-second automatic batch finish. First expect:
+
+   44K MONO -> 44K STER -> 22K MONO -> 22K STER -> 11K MONO -> 11K STER
+
+   Each lasts about one second. All six have the same basic pitch. MONO
+   sounds in both ears. STER sounds first in the left ear, then the right.
+   Short silence between these checks is intentional. Record any first-tone
+   crackle; it is still a known issue, not automatically a failed mixer gate.
+
+4. The same batch continues automatically:
+
+   MIX PRIME -> MIX FOUR -> MIX PAUSE -> MIX FOUR -> MIX GAP -> MIX FOUR -> MIX DRAIN
+   -> MIX PASS
+
+   No extra button is needed after 11K STER. MIX PRIME is a short preparation
+   state and may flash briefly. MIX FOUR should then begin by itself.
+   MIX FOUR combines lower and higher notes. MIX PAUSE is one second of
+   silence. After resume, a lower note drops out of the mix and a higher
+   note enters (the volume changes can lag the label by about 0.3 seconds).
+   MIX GAP deliberately starves only one source: part of the sound drops
+   out, but the OTHER notes must continue. Then the missing note returns.
+   Move the wheel during MIX FOUR; the app/display should still respond.
+   Do not press center or Play during playback; they retain other controls.
+
+5. Repeat steps 2-4 twice more: require THREE consecutive full battery batches
+   to reach MIX PASS. Move the wheel during MIX FOUR on each run. Then start
+   again. While MIX FOUR is playing, release then hold Left+Right for
+   one second: MIX STOP and silence. Release fully. Start once more; it
+   should complete the whole batch to MIX PASS.
+
+6. Start once more on battery and hold Menu+Right for two seconds during
+   MIX FOUR. Audio and screen should stop. Release both and press one button
+   to wake: RESUME and no automatic sound. Start again and reach MIX PASS.
+
+7. Connect USB, wait for PWR USB, and run one full batch to MIX PASS. Use
+   center for LCD WAKE, Play for SHDN READY, then Menu+Play for disk mode.
+   Run .\RESTORE.ps1 and return the concise results below.
+
+Stop on MIX E##, KERN E##, frozen display, unexpected reboot, or abnormal
+noise. Return the exact label and last successful phase; do not keep retrying.
+Recovery only: Menu+Select hard reset, Select+Play boot-ROM disk mode, then
+this folder's RESTORE.ps1. Never write the firmware partition/OSOS.
+
+MIX E02: format/capacity/stale-handle checks; E04: source write accounting;
+E05: output DMA starvation; E06: source underrun count; E07: source retirement
+or end count; E09: preserved pause queues; E13: native rate conversion;
+E14: preparation exceeded two seconds; E15: format completion exceeded two seconds;
+E21-E25 are DMA-driver faults; E31-E35 are mixer-accounting faults.
+E51: output underrun with a refill gap of at least 300 ms;
+E52: output underrun with a mixer block taking at least 23.22 ms.
+E53: output underrun with total source-production plus mixing work for one
+output block taking at least 23.22 ms, including work split across callbacks.
+All are failures, not allowed gaps. Return the exact code if any appears.
+E54: CPU boost admission/readback failed; E55: inherited clock restore failed.

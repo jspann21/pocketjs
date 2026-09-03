@@ -610,6 +610,24 @@ pub extern "C" fn pjs_core_set_kernel_diagnostic(mode: u32, error: u32) {
             push_fixed_decimal(&mut output, error, &[10, 1]);
             (output, abgr(150, 20, 38, 255))
         }
+        34 => (String::from("44K MONO"), abgr(16, 112, 72, 255)),
+        35 => (String::from("44K STER"), abgr(16, 112, 72, 255)),
+        36 => (String::from("22K MONO"), abgr(16, 112, 72, 255)),
+        37 => (String::from("22K STER"), abgr(16, 112, 72, 255)),
+        38 => (String::from("11K MONO"), abgr(16, 112, 72, 255)),
+        39 => (String::from("11K STER"), abgr(16, 112, 72, 255)),
+        40 => (String::from("MIX FOUR"), abgr(16, 112, 72, 255)),
+        41 => (String::from("MIX PAUSE"), abgr(142, 75, 0, 255)),
+        42 => (String::from("MIX GAP"), abgr(142, 75, 0, 255)),
+        43 => (String::from("MIX DRAIN"), abgr(0, 92, 110, 255)),
+        44 => (String::from("MIX PASS"), abgr(16, 112, 72, 255)),
+        45 => (String::from("MIX STOP"), abgr(0, 92, 110, 255)),
+        47 => (String::from("MIX PRIME"), abgr(142, 75, 0, 255)),
+        46 => {
+            let mut output = String::from("MIX E");
+            push_fixed_decimal(&mut output, error, &[10, 1]);
+            (output, abgr(150, 20, 38, 255))
+        }
         _ => {
             let mut output = String::from("KERN E");
             push_fixed_decimal(&mut output, error, &[10, 1]);
@@ -874,6 +892,7 @@ pub extern "C" fn pjs_core_render_damage(
     state.words.clear();
     state.words.extend_from_slice(&state.ui.draw().words);
     let framebuffer = unsafe { slice::from_raw_parts_mut(pixels, PIXELS) };
+    #[cfg(not(feature = "cooperative-audio"))]
     let plan = match raster::render_scaled_rgb565_incremental(
         &state.ui,
         &state.words,
@@ -884,6 +903,37 @@ pub extern "C" fn pjs_core_render_damage(
     ) {
         Ok(plan) => plan,
         Err(_) => return -3,
+    };
+
+    #[cfg(feature = "cooperative-audio")]
+    let plan = {
+        use pocketjs_core::damage::DamageTarget;
+        extern "C" {
+            fn pjs_audio_stream_gate_refill();
+        }
+        // Same retained damage plan and painter order, rendered in bounded
+        // horizontal strips. Only native PCM code runs at these yield points:
+        // it must never re-enter Rust UI state while this borrow is live.
+        let target = DamageTarget::new(WIDTH, HEIGHT, 1, u64::from_be_bytes(*b"IPODR565"));
+        let plan = match state.damage.prepare(&state.ui, &state.words, target)
+            .and_then(|plan| plan.with_policy(DamagePolicy::new(80))) {
+            Ok(plan) => plan,
+            Err(_) => return -3,
+        };
+        for &region in plan.regions() {
+            let mut y = region.y0;
+            while y < region.y1 {
+                let end = (y + 8).min(region.y1);
+                let strip = DamageRect::new(region.x0, y, region.x1, end);
+                unsafe { pjs_audio_stream_gate_refill(); }
+                raster::render_scaled_rgb565_regions(
+                    &state.ui, &state.words, framebuffer, 1, &[strip]);
+                y = end;
+            }
+        }
+        unsafe { pjs_audio_stream_gate_refill(); }
+        state.damage.commit(&state.ui, &state.words, target);
+        plan
     };
 
     for &region in plan.regions() {

@@ -1,0 +1,27 @@
+FOUR-STREAM MIXER BATCH - REVISION 7 RESULTS
+
+QUALIFICATION RECORD - 2026-09-02
+Operator: "all was successful. please commit"
+Full revision 7 physical procedure passed. Restored per standing instruction.
+No separate noise rating supplied; first-tone transient remains open.
+The blank checklist below is retained for future reproduction, not as a
+claim that the operator individually supplied each field.
+
+All six format labels appeared, pitch consistent: YES / NO
+After 11K STER, MIX FOUR begins automatically (brief MIX PRIME allowed): YES / NO
+MONO both ears and STER left then right at all three rates: YES / NO
+MIX FOUR layered notes and post-pause volume change audible: YES / NO
+If an error appears before mixed sound: exact code and last label:
+MIX PAUSE silent; resumes correctly: YES / NO
+MIX GAP removes only part of the sound; other notes keep playing: YES / NO
+Missing note returns after MIX GAP: YES / NO
+Wheel/app remains responsive during the mix: YES / NO
+Three consecutive full battery batches reach MIX PASS: YES / NO
+If not: run number, exact error label, and last successful phase:
+Cancel reaches MIX STOP, restarting reaches MIX PASS: YES / NO
+Suspend stops sound; wake stays silent; restarted batch passes: YES / NO
+USB-powered full batch reaches MIX PASS: YES / NO
+First-tone crackle: BETTER / SAME / WORSE / NONE
+Other clicks, gaps, distortion, exact failure phase, or observations:
+
+Result reports are treated as restored under your standing instruction.

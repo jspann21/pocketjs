@@ -154,3 +154,11 @@ deliberate underrun recovery, exact end/drain checks, and lifecycle cleanup.
 procedure. Build with `AUDIO_STREAM_GATE=1` plus the audio and Campaign 3
 gates. **Revision 2 passed its physical procedure on 2026-09-02**; it does not
 expose the portable audio namespace. A small first-tone crackle remains.
+
+The qualified native mixer batch is `phase1-audio-mix7-simple`, documented in
+`docs/PHASE1_AUDIO_MIX.md`. It adds four source rings, all six rate/channel
+formats, gain and mixing, source-clock retirement accounting, and batch
+pause/starvation/drain checks. `AUDIO_MIX_GATE=1` selects this diagnostic;
+the guest-facing `audio.pcm` capability is still absent. **Revision 7 passed
+its physical procedure on 2026-09-02**, including the scoped 80 MHz CPU boost,
+three consecutive battery batches, cancel/restart, suspend/wake, and USB.

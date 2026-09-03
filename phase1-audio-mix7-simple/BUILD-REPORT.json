@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "status": "hardware-qualified",
+  "campaign": "Campaign 4 - Native format conversion and four-stream mixing, revision 7",
+  "baseCommit": "0d3546b",
+  "sourceState": "Qualified native mixer checkpoint following streaming revision 2; see repository commit containing this report",
+  "hardwareQualification": {
+    "date": "2026-09-02",
+    "operatorReport": "all was successful. please commit",
+    "result": "Full revision7 physical procedure passed, including consecutive battery batches, controls, lifecycle and USB playback",
+    "restoration": "Accepted under standing operator instruction; device install/restore receipts retained",
+    "noise": "No separate first-tone noise rating supplied; known transient not claimed resolved"
+  },
+  "candidate": {
+    "file": "pocketjs-a1099-phase1-audio-mix7.ipod",
+    "bytes": 1123964,
+    "sha256": "f39611516b7c1602628f4e86820ad8147a3e4dc633f985d9aeb2c1b557007a8b"
+  },
+  "previousResult": "Revision 6 played MIX FOUR for a while, then MIX E53: an output underrun with a complete source-generation-plus-mixing block above23.22ms. Not qualified. Restored per standing operator instruction.",
+  "revisionChange": "MIX-only scoped PP5020 80MHz CPU boost before codec preparation; restore inherited PLL/source/memory timing/PLL power after successful DMA and codec teardown. Position-independent IRAM transition, parked COP preserved, IRQ/FIQ masked, 24MHz intermediate and fixed500us PLL settle. Register readbacks required on acquire/release. Failed teardown retains clock ownership. E54 boost admission/readback; E55 restore. No weakening of existing underrun gates or changes to transport, mixer math, ring sizes, output rates, or codec volume.",
+  "references": {
+    "rockbox": "Local ipod main a0e9e0c700, firmware/target/arm/pp/system-pp502x.c PP5020 CPUFREQ_MAX sequence; origin/feature/ipvf-pcm-audio at0593f4f4e0, apps/plugins/ipodnative_player.inc lines112/300 explicitly acquire/release cpu_boost",
+    "retailos": "RetailOS_1.2.1_soso.bin, SHA256 9321189b846a7317f4f575075696056e9a18c79644886a00055a402259c6fadc, file offsets0x6a8..0x7c8; PP5020 unlock/rewrite/500us delay at0x78c..0x7a8",
+    "limitation": "Inherited CPU frequency was not measured on hardware; revision7 playback procedure passed, without proving a unique cause of every earlier failure"
+  },
+  "package": {
+    "files": ["ACTIVE.PKT", "LASTGOOD.PKT", "APP.PKT"],
+    "bytesEach": 214056,
+    "sha256": "d489c03fdfbbdffc2e15922bdd185ce8b07d7722061a8516392162c151664735",
+    "role": "Previously qualified Alpha app plus embedded recovery; no guest audio API"
+  },
+  "build": {
+    "core": "rust",
+    "quickjs": "2026-06-04",
+    "gates": ["AUDIO_MIX_GATE=1", "AUDIO_STREAM_GATE=1", "AUDIO_GATE=1", "POWER_LIFECYCLE_GATE=1", "NATIVE_KERNEL_GATE=1", "LINEAGE_GATE=1"],
+    "environment": "Ubuntu-24.04 WSL, clang 18.1.3, nightly-2026-07-02 Rust"
+  },
+  "checks": [
+    "Native Rust/QuickJS build, both image verifiers, and existing host checks passed",
+    "Native mixer stub build, both image verifiers, and existing host checks passed",
+    "Gate-off stub regression remains byte-identical with all existing checks passed",
+    "Clock stub relocation/disassembly reviewed: no external calls, no SDRAM access during transition, bounded-size copied IRAM code and literals",
+    "DMA IRQ object relocation review shows no mixer, allocation, codec, guest, or cache calls",
+    "Mixer source buffers reside in BSS and are accessed only by the main context; DMA uses its separate uncached output ring"
+  ],
+  "kitRoundTrip": "Revision7 passed install, verify, exact firmware and APP/PENDING restore, and transaction cleanup on temporary Q: volume. No mock receipts included in operator kit. No device writes performed by agent.",
+  "probe": {
+    "trigger": "Left+Right held for one second; repeat chord cancels",
+    "sourceRatesHz": [44100, 22050, 11025],
+    "sourceChannels": [1, 2],
+    "sourceRingFrames": 16384,
+    "maximumStreams": 4,
+    "outputRateHz": 44100,
+    "outputReserveFrames": 14336,
+    "outputBlockFrames": 1024,
+    "ledgerEntries": 32,
+    "gain": "Q15 per source, then 32-bit sum and signed-16 saturation",
+    "codecHeadphoneVolumeDb": -40,
+    "pcmPeakPerSource": 1024,
+    "automaticChecks": "Invalid format and fifth-stream refusal, source capacity, stale handles, six exact source-second conversions, source retirement, global pause preservation, exactly one deliberately starved source, single end event per source after FIFO drain, cancel/restart and lifecycle teardown"
+  },
+  "hardwarePending": ["separate first-tone transient characterization"],
+  "scope": "Native mixer diagnostic only. No globalThis.audio or audio.pcm advertisement. Global batch controls, not independent guest stream teardown. Prepared-output gain latency up to about 0.3 seconds. First-tone crackle remains open. No recording, line-out, app filesystem additions, or direct OSOS installation."
+}

@@ -7,6 +7,9 @@ publish = false
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+cooperative-audio = []
+
 [dependencies]
 pocketjs-core = { path = "../../../engine/core" }
 

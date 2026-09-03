@@ -6,6 +6,9 @@
 #include "heap.h"
 #include "quickjs.h"
 #include "timer.h"
+#if PJS_PHASE1_AUDIO_MIX_GATE
+#include "audio_stream_gate.h"
+#endif
 
 #define PJS_QJS_MEMORY_LIMIT (6u * 1024u * 1024u)
 #define PJS_QJS_GC_THRESHOLD (512u * 1024u)
@@ -190,6 +193,16 @@ static int interrupt_handler(JSRuntime *rt, void *opaque)
     (void)opaque;
     bool expired = execution_deadline != 0u &&
                    (int32_t)(timer_now_us() - execution_deadline) >= 0;
+#if PJS_PHASE1_AUDIO_MIX_GATE
+    /* QuickJS invokes this on the main thread, not from a hardware IRQ.
+     * The refill path never calls JavaScript, UI, or codec operations. Keep
+     * native audio fed inside a long guest turn without relaxing its budget. */
+    if (!expired) {
+        pjs_audio_stream_gate_refill();
+        expired = execution_deadline != 0u &&
+                  (int32_t)(timer_now_us() - execution_deadline) >= 0;
+    }
+#endif
     if (expired) execution_timed_out = true;
     return expired ? 1 : 0;
 }

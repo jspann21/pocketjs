@@ -28,6 +28,7 @@ NATIVE_KERNEL_GATE ?= 0
 POWER_LIFECYCLE_GATE ?= 0
 AUDIO_GATE ?= 0
 AUDIO_STREAM_GATE ?= 0
+AUDIO_MIX_GATE ?= 0
 ifeq ($(AUDIO_GATE),1)
 ifeq ($(POWER_LIFECYCLE_GATE),0)
 $(error AUDIO_GATE requires POWER_LIFECYCLE_GATE=1)
@@ -40,9 +41,17 @@ ifeq ($(AUDIO_STREAM_GATE),1)
 ifeq ($(AUDIO_GATE),0)
 $(error AUDIO_STREAM_GATE requires AUDIO_GATE=1)
 endif
+ifeq ($(AUDIO_MIX_GATE),1)
+AUDIO_STREAM_SOURCES := src/audio_dma.c src/audio_mixer.c src/audio_mix_gate.c src/audio_clock.c
+AUDIO_CLOCK_OBJECT := $(BUILD)/boot/audio-clock.o
+else
 AUDIO_STREAM_SOURCES := src/audio_dma.c src/audio_stream_gate.c
+endif
 else
 AUDIO_STREAM_SOURCES :=
+ifeq ($(AUDIO_MIX_GATE),1)
+$(error AUDIO_MIX_GATE requires AUDIO_STREAM_GATE=1)
+endif
 endif
 DEFINES := -DPJS_A1099_LCD_TYPE=$(LCD_TYPE) -DPJS_BOOTLOADER_HANDOFF=$(HANDOFF_SIGNATURE) \
            -DPJS_PHASE1_POWER_TELEMETRY=$(POWER_TELEMETRY) \
@@ -55,6 +64,7 @@ DEFINES += -DPJS_PHASE1_NATIVE_KERNEL_GATE=$(NATIVE_KERNEL_GATE)
 DEFINES += -DPJS_PHASE1_POWER_LIFECYCLE_GATE=$(POWER_LIFECYCLE_GATE)
 DEFINES += -DPJS_PHASE1_AUDIO_GATE=$(AUDIO_GATE)
 DEFINES += -DPJS_PHASE1_AUDIO_STREAM_GATE=$(AUDIO_STREAM_GATE)
+DEFINES += -DPJS_PHASE1_AUDIO_MIX_GATE=$(AUDIO_MIX_GATE)
 CFLAGS := $(COMMON) -std=c11 $(DEFINES)
 ASFLAGS := $(COMMON) $(DEFINES)
 VERIFY_POWER := $(if $(filter 1,$(POWER_TELEMETRY)),--require-power-telemetry,)
@@ -62,6 +72,7 @@ VERIFY_QUICKJS := $(if $(filter 1,$(QUICKJS_RUNTIME)),--require-quickjs,)
 
 RUST_MANIFEST := $(HOST)/rust-core/Cargo.toml
 RUST_TARGET_DIR := $(BUILD)/rust-target
+RUST_AUDIO_FEATURES := $(if $(filter 1,$(AUDIO_MIX_GATE)),--features cooperative-audio,)
 RUST_LIB := $(RUST_TARGET_DIR)/armv4t-none-eabi/release/libpocketjs_ipod_photo_core.a
 
 RECOVERY_SOURCE := $(HOST)/recovery/app.js
@@ -126,7 +137,7 @@ endif
 SOURCES := $(COMMON_SOURCES) $(PHASE1_SOURCES) $(AUDIO_SOURCES) \
            $(AUDIO_STREAM_SOURCES) $(RUNTIME_SOURCES) $(CORE_SOURCE)
 OBJECTS := $(patsubst %.c,$(BUILD)/%.o,$(SOURCES)) \
-           $(EMBEDDED_PACKAGE_O) $(BUILD)/boot/crt0-phase1.o
+           $(EMBEDDED_PACKAGE_O) $(BUILD)/boot/crt0-phase1.o $(AUDIO_CLOCK_OBJECT)
 
 IMAGE_NAME ?= pocketjs-a1099-phase1-quickjs
 ELF := $(BUILD)/$(IMAGE_NAME).elf
@@ -139,6 +150,10 @@ SHA256SUMS := $(BUILD)/SHA256SUMS.txt
 .PHONY: all clean inspect test manifest ci rust-core c-smoke package quickjs-source
 all: $(IPOD) $(DIS) inspect manifest
 
+# The main-thread PCM producer must meet a 1024-frame/23.22 ms deadline.
+# Optimize these two bounded hot paths for throughput, not minimum code size.
+$(BUILD)/src/audio_mixer.o $(BUILD)/src/audio_mix_gate.o: CFLAGS += -O2
+
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CLANG) $(CFLAGS) $(RUNTIME_INCLUDES) $(RUNTIME_DEFINES) -c $< -o $@
@@ -148,6 +163,10 @@ $(BUILD)/src/qjs_runtime.o: src/qjs_runtime.c $(QUICKJS_STAMP)
 	$(CLANG) $(CFLAGS) $(RUNTIME_INCLUDES) $(RUNTIME_DEFINES) -c $< -o $@
 
 $(BUILD)/boot/crt0-phase1.o: boot/crt0-phase1.S
+	@mkdir -p $(dir $@)
+	$(CLANG) $(ASFLAGS) -c $< -o $@
+
+$(BUILD)/boot/audio-clock.o: boot/audio-clock.S
 	@mkdir -p $(dir $@)
 	$(CLANG) $(ASFLAGS) -c $< -o $@
 
@@ -225,7 +244,7 @@ endif
 
 $(RUST_LIB): $(shell find $(HOST)/rust-core $(REPO)/engine/core -type f -not -path '*/target/*')
 	@mkdir -p $(RUST_TARGET_DIR)
-	cd $(HOST)/rust-core && CARGO_TARGET_DIR=$(RUST_TARGET_DIR) $(CARGO) build --release --locked
+	cd $(HOST)/rust-core && CARGO_TARGET_DIR=$(RUST_TARGET_DIR) $(CARGO) build --release --locked $(RUST_AUDIO_FEATURES)
 
 rust-core: $(RUST_LIB)
 

@@ -1545,7 +1545,16 @@ void kernel_main_phase1(void)
         if (lifecycle.suspended != 0u) continue;
 #endif
 
+#if PJS_PHASE1_AUDIO_MIX_GATE
+        /* A short refill can yield with a depleted queue. Keep servicing
+         * controls and native audio at the loop top until reserve recovers,
+         * before admitting more guest/layout/render work. */
+        pjs_audio_stream_gate_refill();
+        if (pjs_audio_stream_gate_needs_service()) continue;
+        uint32_t steps = scheduler_take_fixed_batch(1u);
+#else
         uint32_t steps = scheduler_take_fixed_batch(PJS_SCHEDULER_MAX_STEPS_PER_PASS);
+#endif
         if (steps != 0u) {
 #if PJS_PHASE1_POWER_LIFECYCLE_GATE
             if (lifecycle.suspended == 0u) {
@@ -1621,6 +1630,9 @@ void kernel_main_phase1(void)
                     }
 #endif
                 }
+#if PJS_PHASE1_AUDIO_MIX_GATE
+                pjs_audio_stream_gate_refill();
+#endif
                 if (pjs_core_step(&frame_input) < 0) {
                     panic_code(0x50314332u); /* P1C2 */
                 }
@@ -1636,7 +1648,9 @@ void kernel_main_phase1(void)
             /* Drain bounded catch-up work before starting another expensive
              * render. Input is polled again at the top of every batch. */
             scheduler_snapshot(&scheduler);
+#if !PJS_PHASE1_AUDIO_MIX_GATE
             if (scheduler.pending != 0u) continue;
+#endif
 #if PJS_PHASE1_POWER_LIFECYCLE_GATE
             } else {
                 /* Keep the scheduler bounded while the guest and disk are
@@ -1646,6 +1660,10 @@ void kernel_main_phase1(void)
 #endif
         }
 
+#if PJS_PHASE1_AUDIO_MIX_GATE
+        pjs_audio_stream_gate_refill();
+        if (pjs_audio_stream_gate_needs_service()) continue;
+#endif
         now = timer_now_us();
         if (pjs_core_needs_render() == 0u ||
             (int32_t)(now - next_present) < 0) {
