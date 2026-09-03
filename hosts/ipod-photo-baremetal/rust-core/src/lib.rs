@@ -990,6 +990,11 @@ pub extern "C" fn pjs_package_open_ipod_photo(
         Ok(guest) => guest,
         Err(_) => return -2,
     };
+    #[cfg(feature = "portable-audio")]
+    let supported_features: &[&str] =
+        &["input.buttons", "audio.pcm", "text.glyphs.baked"];
+    #[cfg(not(feature = "portable-audio"))]
+    let supported_features: &[&str] = &["input.buttons", "text.glyphs.baked"];
     let plan_contract = package::FixedPlanContract {
         target: "ipod-photo",
         host_abi: 1,
@@ -997,7 +1002,7 @@ pub extern "C" fn pjs_package_open_ipod_photo(
         height: HEIGHT,
         presentation: "native",
         raster_density: 1,
-        supported_features: &["input.buttons", "text.glyphs.baked"],
+        supported_features,
     };
     if package::validate_fixed_plan(guest.plan, &plan_contract).is_err() {
         return -4;

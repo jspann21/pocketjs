@@ -29,6 +29,7 @@ POWER_LIFECYCLE_GATE ?= 0
 AUDIO_GATE ?= 0
 AUDIO_STREAM_GATE ?= 0
 AUDIO_MIX_GATE ?= 0
+AUDIO_PCM_GATE ?= 0
 ifeq ($(AUDIO_GATE),1)
 ifeq ($(POWER_LIFECYCLE_GATE),0)
 $(error AUDIO_GATE requires POWER_LIFECYCLE_GATE=1)
@@ -41,7 +42,22 @@ ifeq ($(AUDIO_STREAM_GATE),1)
 ifeq ($(AUDIO_GATE),0)
 $(error AUDIO_STREAM_GATE requires AUDIO_GATE=1)
 endif
+ifeq ($(AUDIO_PCM_GATE),1)
 ifeq ($(AUDIO_MIX_GATE),1)
+$(error AUDIO_PCM_GATE and AUDIO_MIX_GATE are mutually exclusive)
+endif
+ifeq ($(LINEAGE_GATE),0)
+$(error AUDIO_PCM_GATE requires LINEAGE_GATE=1)
+endif
+ifeq ($(NATIVE_KERNEL_GATE),0)
+$(error AUDIO_PCM_GATE requires NATIVE_KERNEL_GATE=1)
+endif
+ifeq ($(POWER_LIFECYCLE_GATE),0)
+$(error AUDIO_PCM_GATE requires POWER_LIFECYCLE_GATE=1)
+endif
+AUDIO_STREAM_SOURCES := src/audio_dma.c src/audio_pcm_mixer.c src/audio_pcm.c src/audio_clock.c
+AUDIO_CLOCK_OBJECT := $(BUILD)/boot/audio-clock.o
+else ifeq ($(AUDIO_MIX_GATE),1)
 AUDIO_STREAM_SOURCES := src/audio_dma.c src/audio_mixer.c src/audio_mix_gate.c src/audio_clock.c
 AUDIO_CLOCK_OBJECT := $(BUILD)/boot/audio-clock.o
 else
@@ -51,6 +67,9 @@ else
 AUDIO_STREAM_SOURCES :=
 ifeq ($(AUDIO_MIX_GATE),1)
 $(error AUDIO_MIX_GATE requires AUDIO_STREAM_GATE=1)
+endif
+ifeq ($(AUDIO_PCM_GATE),1)
+$(error AUDIO_PCM_GATE requires AUDIO_STREAM_GATE=1)
 endif
 endif
 DEFINES := -DPJS_A1099_LCD_TYPE=$(LCD_TYPE) -DPJS_BOOTLOADER_HANDOFF=$(HANDOFF_SIGNATURE) \
@@ -65,6 +84,7 @@ DEFINES += -DPJS_PHASE1_POWER_LIFECYCLE_GATE=$(POWER_LIFECYCLE_GATE)
 DEFINES += -DPJS_PHASE1_AUDIO_GATE=$(AUDIO_GATE)
 DEFINES += -DPJS_PHASE1_AUDIO_STREAM_GATE=$(AUDIO_STREAM_GATE)
 DEFINES += -DPJS_PHASE1_AUDIO_MIX_GATE=$(AUDIO_MIX_GATE)
+DEFINES += -DPJS_PHASE1_AUDIO_PCM_GATE=$(AUDIO_PCM_GATE)
 CFLAGS := $(COMMON) -std=c11 $(DEFINES)
 ASFLAGS := $(COMMON) $(DEFINES)
 VERIFY_POWER := $(if $(filter 1,$(POWER_TELEMETRY)),--require-power-telemetry,)
@@ -72,7 +92,11 @@ VERIFY_QUICKJS := $(if $(filter 1,$(QUICKJS_RUNTIME)),--require-quickjs,)
 
 RUST_MANIFEST := $(HOST)/rust-core/Cargo.toml
 RUST_TARGET_DIR := $(BUILD)/rust-target
+ifeq ($(AUDIO_PCM_GATE),1)
+RUST_AUDIO_FEATURES := --features portable-audio
+else
 RUST_AUDIO_FEATURES := $(if $(filter 1,$(AUDIO_MIX_GATE)),--features cooperative-audio,)
+endif
 RUST_LIB := $(RUST_TARGET_DIR)/armv4t-none-eabi/release/libpocketjs_ipod_photo_core.a
 
 RECOVERY_SOURCE := $(HOST)/recovery/app.js
@@ -152,7 +176,8 @@ all: $(IPOD) $(DIS) inspect manifest
 
 # The main-thread PCM producer must meet a 1024-frame/23.22 ms deadline.
 # Optimize these two bounded hot paths for throughput, not minimum code size.
-$(BUILD)/src/audio_mixer.o $(BUILD)/src/audio_mix_gate.o: CFLAGS += -O2
+$(BUILD)/src/audio_mixer.o $(BUILD)/src/audio_mix_gate.o \
+$(BUILD)/src/audio_pcm_mixer.o $(BUILD)/src/audio_pcm.o: CFLAGS += -O2
 
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -224,6 +249,8 @@ $(BUILD)/host-qjs/%.o: $(QUICKJS_STAMP)
 $(BUILD)/host-qjs/qjs_runtime.o: src/qjs_runtime.c $(QUICKJS_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) -O2 -std=c11 -Wall -Wextra -Werror -Iinclude \
+	  -DPJS_PHASE1_AUDIO_PCM_GATE=$(AUDIO_PCM_GATE) \
+	  -DPJS_PHASE1_AUDIO_MIX_GATE=0 \
 	  -isystem $(QUICKJS_PREPARED) -D_GNU_SOURCE -DPJS_QUICKJS_BAREMETAL \
 	  -DCONFIG_VERSION=\"$(QUICKJS_VERSION)\" -c $< -o $@
 
@@ -233,7 +260,8 @@ $(BUILD)/host-qjs/embedded_package.o: $(EMBEDDED_PACKAGE_C)
 
 $(BUILD)/host-qjs/test_qjs_runtime.o: tests/test_qjs_runtime.c
 	@mkdir -p $(dir $@)
-	$(CC) -O2 -std=c11 -Wall -Wextra -Werror -Iinclude -c $< -o $@
+	$(CC) -O2 -std=c11 -Wall -Wextra -Werror -Iinclude \
+	  -DPJS_PHASE1_AUDIO_PCM_GATE=$(AUDIO_PCM_GATE) -c $< -o $@
 
 $(BUILD)/host/test-qjs-runtime: $(HOST_QUICKJS_OBJECTS) \
     $(BUILD)/host-qjs/qjs_runtime.o $(BUILD)/host-qjs/embedded_package.o \
@@ -305,6 +333,16 @@ test: runtime-hold-contract $(QJS_HOST_TEST)
 	  tests/test_fat32.c src/fat32.c src/state_record.c src/lineage_record.c \
 	  -o $(BUILD)/host/test-fat32
 	$(BUILD)/host/test-fat32
+ifeq ($(AUDIO_PCM_GATE),1)
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude \
+	  tests/test_audio_pcm_mixer.c src/audio_pcm_mixer.c \
+	  -o $(BUILD)/host/test-audio-pcm-mixer
+	$(BUILD)/host/test-audio-pcm-mixer
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude \
+	  tests/test_audio_pcm.c src/audio_pcm.c src/audio_pcm_mixer.c \
+	  -o $(BUILD)/host/test-audio-pcm
+	$(BUILD)/host/test-audio-pcm
+endif
 	$(PYTHON) tests/test_embedded_pocket.py
 ifeq ($(QUICKJS_RUNTIME),1)
 	$(BUILD)/host/test-qjs-runtime

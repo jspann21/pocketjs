@@ -200,6 +200,46 @@ describe("WavPlayer x sim sink", () => {
     }
   });
 
+  test("multiple WavPlayers route namespace-wide events by handle", () => {
+    const sink = createSimAudioSink();
+    (globalThis as Record<string, unknown>).audio = sink.ns;
+    try {
+      const a = createWavPlayer();
+      const b = createWavPlayer();
+      const frames = 22050;
+      const dataA = new Int16Array(frames);
+      const dataB = new Int16Array(frames);
+      for (let i = 0; i < frames; i++) {
+        dataA[i] = (i % 1024) - 512;
+        dataB[i] = 512 - (i % 1024);
+      }
+      expect(a.loadPcm({ sampleRate: 22050, channels: 1, frames, data: dataA })).toBe(true);
+      expect(b.loadPcm({ sampleRate: 22050, channels: 1, frames, data: dataB })).toBe(true);
+      a.play();
+      b.play();
+
+      // A intentionally drains the namespace first on every tick. The router
+      // must preserve B's credits and ended edge until B pumps.
+      for (let t = 0; t < 100; t++) {
+        a.pump();
+        b.pump();
+        sink.tick();
+      }
+      a.pump();
+      b.pump();
+      expect(a.playing()).toBe(false);
+      expect(b.playing()).toBe(false);
+      expect(a.stats().underruns).toBe(0);
+      expect(b.stats().underruns).toBe(0);
+      expect(sink.consumedFrames()).toBe(frames * 2);
+      expect(sink.log.filter((line) => line.includes('"ended"')).length).toBe(2);
+      a.dispose();
+      b.dispose();
+    } finally {
+      delete (globalThis as Record<string, unknown>).audio;
+    }
+  });
+
   test("guest mirror math: free-frame budget never exceeds the ring", () => {
     const sink = createSimAudioSink();
     (globalThis as Record<string, unknown>).audio = sink.ns;

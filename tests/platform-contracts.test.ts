@@ -344,7 +344,7 @@ describe("platform registry", () => {
         presentations: ["native"],
         rasterDensity: 1,
       },
-      capabilities: ["input.buttons", "text.glyphs.baked"],
+      capabilities: ["input.buttons", "audio.pcm", "text.glyphs.baked"],
     });
   });
 
@@ -548,6 +548,7 @@ describe("semantic resolution", () => {
       "meizu-m8-demo": [false, false, false, false], // admitted only by the private meizu-m8-dev profile
       nsengine: [false, true, false, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
       "ipod-nano": [false, false, false, false], // admitted by the package-shaped macos-embedded target
+      "ipod-photo-audio-pcm-test": [false, false, false, false], // admitted only by ipod-photo: fixed 220x176 + audio.pcm
       "ipod-photo-demo": [false, false, false, false], // admitted by the canonical 220x176 ipod-photo target
       launcher: [true, true, false, true], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
       library: [true, true, false, true],

@@ -428,7 +428,8 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       presentations: ["native"],
       rasterDensity: 1,
     },
-    capabilities: ["input.buttons", "text.glyphs.baked"],
+    // Portable PCM is mounted only by the AUDIO_PCM_GATE A1099 build.
+    capabilities: ["input.buttons", "audio.pcm", "text.glyphs.baked"],
   },
 });
 

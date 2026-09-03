@@ -1,0 +1,30 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.ipod-photo-audio-pcm-test",
+  "name": "ipod-photo-audio-pcm-test",
+  "title": "iPod Photo Audio PCM",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "input.buttons",
+        "audio.pcm"
+      ]
+    }
+  },
+  "app": {
+    "entry": "apps/ipod-photo-audio-pcm-test/app.ts",
+    "output": "ipod-photo-audio-pcm-test",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [
+          220,
+          176
+        ],
+        "presentation": "native"
+      }
+    }
+  }
+}

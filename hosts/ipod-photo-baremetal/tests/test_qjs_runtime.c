@@ -2,6 +2,9 @@
 
 #include "core_bridge.h"
 #include "qjs_runtime.h"
+#if PJS_PHASE1_AUDIO_PCM_GATE
+#include "audio_pcm.h"
+#endif
 
 #include <assert.h>
 #include <stdbool.h>
@@ -297,6 +300,103 @@ float pjs_ui_measure_text(const uint8_t *text, size_t length,
     return 0.0f;
 }
 
+#if PJS_PHASE1_AUDIO_PCM_GATE
+static int audio_create_calls;
+static int audio_destroy_calls;
+static int audio_write_calls;
+static int audio_play_calls;
+static int audio_pause_calls;
+static int audio_stop_calls;
+static int audio_volume_calls;
+static int audio_end_calls;
+static int audio_tick_calls;
+static int audio_reset_calls;
+static int audio_poll_calls;
+static uint32_t audio_rate;
+static uint32_t audio_channels;
+static size_t audio_write_bytes_seen;
+static double audio_volume;
+
+int pjs_audio_pcm_create_stream(uint32_t rate, uint32_t channels)
+{
+    ++audio_create_calls;
+    audio_rate = rate;
+    audio_channels = channels;
+    return 41;
+}
+void pjs_audio_pcm_destroy_stream(int handle)
+{
+    assert(handle == 41);
+    ++audio_destroy_calls;
+}
+uint32_t pjs_audio_pcm_write(int handle, const int16_t *pcm, uint32_t frames)
+{
+    (void)handle;
+    (void)pcm;
+    return frames;
+}
+uint32_t pjs_audio_pcm_write_bytes(int handle, const uint8_t *bytes, size_t length)
+{
+    assert(handle == 41 && bytes != NULL);
+    ++audio_write_calls;
+    audio_write_bytes_seen = length;
+    return 2u;
+}
+void pjs_audio_pcm_play(int handle) { assert(handle == 41); ++audio_play_calls; }
+void pjs_audio_pcm_pause(int handle) { assert(handle == 41); ++audio_pause_calls; }
+void pjs_audio_pcm_stop(int handle) { assert(handle == 41); ++audio_stop_calls; }
+void pjs_audio_pcm_set_volume(int handle, double volume)
+{
+    assert(handle == 41);
+    ++audio_volume_calls;
+    audio_volume = volume;
+}
+void pjs_audio_pcm_end_stream(int handle) { assert(handle == 41); ++audio_end_calls; }
+void pjs_audio_pcm_begin_tick(void) { ++audio_tick_calls; }
+const char *pjs_audio_pcm_poll(void)
+{
+    ++audio_poll_calls;
+    return audio_poll_calls == 1 ?
+        "{\"t\":\"credit\",\"h\":41,\"free\":99}" : NULL;
+}
+void pjs_audio_pcm_service(void) {}
+bool pjs_audio_pcm_needs_service(void) { return false; }
+bool pjs_audio_pcm_active(void) { return false; }
+int pjs_audio_pcm_reset(void) { ++audio_reset_calls; return 0; }
+uint32_t pjs_audio_pcm_last_error(void) { return 0u; }
+void pjs_audio_stream_gate_refill(void) {}
+
+static void test_audio_namespace(void)
+{
+    static const uint8_t source[] =
+        "const h=audio.createStream(44100,2);"
+        "if(h!==41)throw new Error('handle');"
+        "const b=new Uint8Array(8);"
+        "if(audio.writePcm(h,b)!==2)throw new Error('write');"
+        "audio.play(h);audio.pause(h);audio.stop(h);"
+        "audio.setVolume(h,0.25);audio.endStream(h);"
+        "const e=audio.poll();if(!e||e.indexOf('credit')<0)throw new Error('poll');"
+        "audio.destroyStream(h);globalThis.frame=function(){};";
+    PjsGuestPackage guest = {
+        .javascript = source,
+        .javascript_length = (uint32_t)sizeof(source),
+    };
+    int resets_before = audio_reset_calls;
+    assert(qjs_runtime_boot(&guest));
+    assert(audio_reset_calls == resets_before + 1);
+    assert(audio_create_calls == 1 && audio_rate == 44100u && audio_channels == 2u);
+    assert(audio_write_calls == 1 && audio_write_bytes_seen == 8u);
+    assert(audio_play_calls == 1 && audio_pause_calls == 1 && audio_stop_calls == 1);
+    assert(audio_volume_calls == 1 && audio_volume == 0.25);
+    assert(audio_end_calls == 1 && audio_destroy_calls == 1 && audio_poll_calls == 1);
+    PjsCoreInput input = {0};
+    assert(qjs_runtime_frame(&input));
+    assert(audio_tick_calls == 1);
+    qjs_runtime_shutdown();
+    assert(audio_reset_calls == resets_before + 2);
+}
+#endif
+
 static uint32_t abgr(uint8_t red, uint8_t green, uint8_t blue)
 {
     return (uint32_t)red | ((uint32_t)green << 8) |
@@ -305,6 +405,9 @@ static uint32_t abgr(uint8_t red, uint8_t green, uint8_t blue)
 
 int main(void)
 {
+#if PJS_PHASE1_AUDIO_PCM_GATE
+    test_audio_namespace();
+#endif
     PjsGuestPackage guest = guest_from_embedded();
     assert(qjs_runtime_boot(&guest));
     assert(qjs_runtime_error_code() == PJS_QJS_ERROR_NONE);

@@ -8,6 +8,8 @@
 #include "timer.h"
 #if PJS_PHASE1_AUDIO_MIX_GATE
 #include "audio_stream_gate.h"
+#elif PJS_PHASE1_AUDIO_PCM_GATE
+#include "audio_pcm.h"
 #endif
 
 #define PJS_QJS_MEMORY_LIMIT (6u * 1024u * 1024u)
@@ -193,12 +195,16 @@ static int interrupt_handler(JSRuntime *rt, void *opaque)
     (void)opaque;
     bool expired = execution_deadline != 0u &&
                    (int32_t)(timer_now_us() - execution_deadline) >= 0;
-#if PJS_PHASE1_AUDIO_MIX_GATE
+#if PJS_PHASE1_AUDIO_MIX_GATE || PJS_PHASE1_AUDIO_PCM_GATE
     /* QuickJS invokes this on the main thread, not from a hardware IRQ.
-     * The refill path never calls JavaScript, UI, or codec operations. Keep
-     * native audio fed inside a long guest turn without relaxing its budget. */
+     * Keep native PCM cooperative service alive inside a long guest turn
+     * without relaxing the JavaScript execution budget. */
     if (!expired) {
+#if PJS_PHASE1_AUDIO_PCM_GATE
+        pjs_audio_pcm_service();
+#else
         pjs_audio_stream_gate_refill();
+#endif
         expired = execution_deadline != 0u &&
                   (int32_t)(timer_now_us() - execution_deadline) >= 0;
     }
@@ -518,6 +524,112 @@ static JSValue host_operation(JSContext *ctx, JSValueConst this_value,
     }
 }
 
+#if PJS_PHASE1_AUDIO_PCM_GATE
+typedef enum {
+    AUDIO_CREATE_STREAM = 1,
+    AUDIO_DESTROY_STREAM,
+    AUDIO_WRITE_PCM,
+    AUDIO_PLAY,
+    AUDIO_PAUSE,
+    AUDIO_STOP,
+    AUDIO_SET_VOLUME,
+    AUDIO_END_STREAM,
+    AUDIO_POLL,
+} AudioOperation;
+
+static JSValue audio_operation(JSContext *ctx, JSValueConst this_value,
+                               int argc, JSValueConst *argv, int magic)
+{
+    (void)this_value;
+    int32_t handle = 0;
+    uint32_t rate = 0u;
+    uint32_t channels = 0u;
+    double volume = 0.0;
+    const uint8_t *bytes = 0;
+    size_t length = 0u;
+
+    switch ((AudioOperation)magic) {
+    case AUDIO_CREATE_STREAM:
+        if (argument_u32(ctx, argc, argv, 0, &rate) < 0 ||
+            argument_u32(ctx, argc, argv, 1, &channels) < 0) {
+            return JS_EXCEPTION;
+        }
+        return JS_NewInt32(ctx, pjs_audio_pcm_create_stream(rate, channels));
+    case AUDIO_DESTROY_STREAM:
+        if (argument_i32(ctx, argc, argv, 0, &handle) < 0) return JS_EXCEPTION;
+        pjs_audio_pcm_destroy_stream(handle);
+        return JS_UNDEFINED;
+    case AUDIO_WRITE_PCM: {
+        if (argument_i32(ctx, argc, argv, 0, &handle) < 0) return JS_EXCEPTION;
+        int result = argument_bytes(ctx, argc, argv, 1, &bytes, &length);
+        if (result != 1) return JS_NewInt32(ctx, 0);
+        uint32_t accepted = pjs_audio_pcm_write_bytes(handle, bytes, length);
+        return JS_NewInt32(ctx, accepted > INT32_MAX ? INT32_MAX :
+                                                (int32_t)accepted);
+    }
+    case AUDIO_PLAY:
+        if (argument_i32(ctx, argc, argv, 0, &handle) < 0) return JS_EXCEPTION;
+        pjs_audio_pcm_play(handle);
+        return JS_UNDEFINED;
+    case AUDIO_PAUSE:
+        if (argument_i32(ctx, argc, argv, 0, &handle) < 0) return JS_EXCEPTION;
+        pjs_audio_pcm_pause(handle);
+        return JS_UNDEFINED;
+    case AUDIO_STOP:
+        if (argument_i32(ctx, argc, argv, 0, &handle) < 0) return JS_EXCEPTION;
+        pjs_audio_pcm_stop(handle);
+        return JS_UNDEFINED;
+    case AUDIO_SET_VOLUME:
+        if (argument_i32(ctx, argc, argv, 0, &handle) < 0 ||
+            argument_f64(ctx, argc, argv, 1, &volume) < 0) {
+            return JS_EXCEPTION;
+        }
+        pjs_audio_pcm_set_volume(handle, volume);
+        return JS_UNDEFINED;
+    case AUDIO_END_STREAM:
+        if (argument_i32(ctx, argc, argv, 0, &handle) < 0) return JS_EXCEPTION;
+        pjs_audio_pcm_end_stream(handle);
+        return JS_UNDEFINED;
+    case AUDIO_POLL: {
+        const char *event = pjs_audio_pcm_poll();
+        return event == 0 ? JS_UNDEFINED : JS_NewString(ctx, event);
+    }
+    default:
+        return JS_ThrowInternalError(ctx, "unknown PocketJS audio op");
+    }
+}
+
+static int add_audio_operation(JSValueConst object, const char *name, int arity,
+                               AudioOperation operation)
+{
+    JSValue function = JS_NewCFunctionMagic(
+        context, audio_operation, name, arity, JS_CFUNC_generic_magic,
+        (int)operation);
+    if (JS_IsException(function)) return -1;
+    return JS_SetPropertyStr(context, object, name, function);
+}
+
+static int install_audio(void)
+{
+    JSValue audio = JS_NewObject(context);
+    if (JS_IsException(audio)) return -1;
+    if (add_audio_operation(audio, "createStream", 2, AUDIO_CREATE_STREAM) < 0 ||
+        add_audio_operation(audio, "destroyStream", 1, AUDIO_DESTROY_STREAM) < 0 ||
+        add_audio_operation(audio, "writePcm", 2, AUDIO_WRITE_PCM) < 0 ||
+        add_audio_operation(audio, "play", 1, AUDIO_PLAY) < 0 ||
+        add_audio_operation(audio, "pause", 1, AUDIO_PAUSE) < 0 ||
+        add_audio_operation(audio, "stop", 1, AUDIO_STOP) < 0 ||
+        add_audio_operation(audio, "setVolume", 2, AUDIO_SET_VOLUME) < 0 ||
+        add_audio_operation(audio, "endStream", 1, AUDIO_END_STREAM) < 0 ||
+        add_audio_operation(audio, "poll", 0, AUDIO_POLL) < 0) {
+        JS_FreeValue(context, audio);
+        return -1;
+    }
+    /* JS_SetPropertyStr consumes audio on either result. */
+    return JS_SetPropertyStr(context, global_value, "audio", audio);
+}
+#endif
+
 static int add_operation(JSValueConst object, const char *name, int arity,
                          HostOperation operation)
 {
@@ -619,6 +731,9 @@ static int install_host(void)
         JS_SetPropertyStr(context, global_value, "__simHz", JS_NewInt32(context, 60)) < 0) {
         return -1;
     }
+#if PJS_PHASE1_AUDIO_PCM_GATE
+    if (install_audio() < 0) return -1;
+#endif
     return 0;
 }
 
@@ -648,6 +763,11 @@ static bool drain_jobs(uint32_t error)
 
 bool qjs_runtime_boot(const PjsGuestPackage *guest)
 {
+#if PJS_PHASE1_AUDIO_PCM_GATE
+    /* Guest ownership is strict: no stream may survive an app replacement,
+     * even if the previous runtime exited before its ordinary shutdown path. */
+    (void)pjs_audio_pcm_reset();
+#endif
     error_code = PJS_QJS_ERROR_NONE;
     runtime = 0;
     context = 0;
@@ -753,6 +873,11 @@ bool qjs_runtime_boot(const PjsGuestPackage *guest)
 bool qjs_runtime_frame(const PjsCoreInput *input)
 {
     if (context == 0 || runtime == 0 || input == 0) return false;
+#if PJS_PHASE1_AUDIO_PCM_GATE
+    /* Publish hardware facts before the guest turn. poll() can drain this
+     * frozen batch, while new native facts wait for the following tick. */
+    pjs_audio_pcm_begin_tick();
+#endif
     uint32_t buttons = guest_buttons(input);
     JSValue arguments[7];
     size_t argument_count;
@@ -830,6 +955,9 @@ int32_t qjs_runtime_launcher_selection(void)
 void qjs_runtime_shutdown(void)
 {
     execution_budget_stop();
+#if PJS_PHASE1_AUDIO_PCM_GATE
+    (void)pjs_audio_pcm_reset();
+#endif
     if (context != 0) {
         JS_FreeValue(context, launcher_value);
         JS_FreeValue(context, ipod_input_value);
