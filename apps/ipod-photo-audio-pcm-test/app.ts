@@ -64,44 +64,41 @@ function view(x: number, y: number, width: number, height: number, color: number
   return node;
 }
 
+/* Build the qualification tones with TypedArray.fill() blocks rather than a
+ * per-sample JavaScript loop. On the 80 MHz PP5020 this keeps package eval a
+ * bounded cold path while preserving the same portable PCM formats. Stereo
+ * streams intentionally carry the same square wave on both channels; channel
+ * independence was already qualified in the native Campaign-4 mixer. */
 function squarePcm(
   sampleRate: number,
   channels: 1 | 2,
   seconds: number,
-  leftHz: number,
-  rightHz: number,
+  frequency: number,
   amplitude: number,
 ): WavPcm {
   const frames = Math.floor(sampleRate * seconds);
   const data = new Int16Array(frames * channels);
-  const leftPeriod = Math.max(2, Math.floor(sampleRate / leftHz));
-  const rightPeriod = Math.max(2, Math.floor(sampleRate / rightHz));
-  for (let frame = 0; frame < frames; frame++) {
-    // A short integer ramp suppresses the worst start/end click without a
-    // floating-point sine table in the 80 MHz QuickJS boot path.
-    let gain = amplitude;
-    const tail = frames - 1 - frame;
-    if (frame < 64) gain = Math.floor((gain * frame) / 64);
-    else if (tail < 64) gain = Math.floor((gain * tail) / 64);
-    const left = frame % leftPeriod < leftPeriod / 2 ? gain : -gain;
-    if (channels === 1) {
-      data[frame] = left;
-    } else {
-      const right = frame % rightPeriod < rightPeriod / 2 ? gain : -gain;
-      data[frame * 2] = left;
-      data[frame * 2 + 1] = right;
-    }
+  const halfPeriod = Math.max(1, Math.floor(sampleRate / (frequency * 2)));
+  let sample = amplitude;
+  for (let first = 0; first < frames; first += halfPeriod) {
+    const last = Math.min(frames, first + halfPeriod);
+    data.fill(sample, first * channels, last * channels);
+    sample = -sample;
   }
+  const quietFrames = Math.min(32, Math.floor(frames / 4));
+  data.fill(0, 0, quietFrames * channels);
+  data.fill(0, (frames - quietFrames) * channels);
   return { sampleRate, channels, frames, data };
 }
 
-/* Four deliberately different portable formats. Total retained PCM is about
- * 1.2 MiB, leaving substantial room below the A1099 QuickJS heap limit. */
+/* Keep the original four portable formats and durations. The bulk-fill tone
+ * builder makes this ~1.2 MiB retained PCM set cheap to construct without
+ * weakening the 44.1/22.05/11.025 kHz and mono/stereo hardware coverage. */
 const pcm: readonly WavPcm[] = [
-  squarePcm(44100, 2, 1.5, 330, 440, 1500),
-  squarePcm(22050, 1, 4.0, 550, 550, 1450),
-  squarePcm(11025, 2, 5.0, 660, 770, 1400),
-  squarePcm(44100, 1, 6.0, 880, 880, 1350),
+  squarePcm(44100, 2, 1.5, 330, 1500),
+  squarePcm(22050, 1, 4.0, 550, 1450),
+  squarePcm(11025, 2, 5.0, 660, 1400),
+  squarePcm(44100, 1, 6.0, 880, 1350),
 ];
 const players: WavPlayer[] = [
   createWavPlayer(),
@@ -140,9 +137,11 @@ ui.setProp(readyChip, PROP.radius, 2);
 let master = 0.65;
 const trackScale = [0.62, 0.55, 0.52, 0.55];
 let scenarioTick = 0;
-let dResumeTick = 0;
+let pumpCursor = 0;
 let previousButtons = 0;
 let firstStart = true;
+const D_STARVE_START = 60;  // first give D ~1 second to establish a full ring
+const D_STARVE_END = 96;    // then withhold guest writes for ~0.6 second
 
 function applyVolumes(): void {
   for (let index = 0; index < players.length; index++) {
@@ -151,37 +150,25 @@ function applyVolumes(): void {
   ui.setProp(masterFill, PROP.width, Math.max(1, Math.floor(200 * master)));
 }
 
-function prime(player: WavPlayer): void {
-  // Four 4096-frame pumps fill the contract's 16,384-frame source ring.
-  // This makes stream D's intentional no-pump interval a real starvation
-  // recovery test rather than a startup underrun.
-  for (let index = 0; index < 4; index++) player.pump();
-}
-
 function restartScenario(): void {
   scenarioTick = 0;
+  pumpCursor = 0;
   trackScale[0] = 0.62;
   trackScale[1] = 0.55;
   trackScale[2] = 0.52;
   trackScale[3] = 0.55;
   for (const player of players) player.stop();
   applyVolumes();
-  for (const player of players) {
-    player.play();
-    prime(player);
-  }
-  // D is now fully primed, then intentionally receives no guest pump for
-  // 36 ticks (~0.6 s). Its 16k ring empties at ~0.37 s; A/B/C continue.
-  // Another player drains the shared native poll queue first, so D recovering
-  // also proves the framework's per-handle event broker.
-  dResumeTick = 36;
+  /* play() is intentionally cheap here. WavPlayer defers the native play op
+   * until that stream receives its first bounded pump below. This removes the
+   * old 16-pump first-frame burst while preserving underrun-safe startup. */
+  for (const player of players) player.play();
   firstStart = false;
 }
 
 function replayC(): void {
   players[2]!.stop();
   players[2]!.play();
-  prime(players[2]!);
 }
 
 function updateVisuals(): void {
@@ -197,11 +184,11 @@ function updateVisuals(): void {
   ui.setProp(underrunChip, PROP.background, dUnderruns > 0 ? COLOR.red : COLOR.dark);
 
   let phase = COLOR.cyan;
-  if (scenarioTick < dResumeTick) phase = COLOR.orange; // deliberate D starvation
-  else if (scenarioTick >= 120 && scenarioTick < 180) phase = COLOR.yellow; // B paused
-  else if (scenarioTick >= 210 && scenarioTick < 240) phase = COLOR.red; // C stopped
-  else if (scenarioTick >= 270 && scenarioTick < 300) phase = COLOR.purple; // D low gain
-  else if (scenarioTick >= 330 && scenarioTick < 350) phase = COLOR.green; // D generation swap
+  if (scenarioTick >= D_STARVE_START && scenarioTick < D_STARVE_END) phase = COLOR.orange;
+  else if (scenarioTick >= 120 && scenarioTick < 180) phase = COLOR.yellow;
+  else if (scenarioTick >= 210 && scenarioTick < 240) phase = COLOR.red;
+  else if (scenarioTick >= 270 && scenarioTick < 300) phase = COLOR.purple;
+  else if (scenarioTick >= 330 && scenarioTick < 350) phase = COLOR.green;
   ui.setProp(phaseChip, PROP.background, phase);
 }
 
@@ -221,6 +208,18 @@ function buttonEdges(buttons: number): void {
   }
 }
 
+function pumpOneStream(): void {
+  const index = pumpCursor;
+  pumpCursor = (pumpCursor + 1) & 3;
+  if (index === 3 && scenarioTick >= D_STARVE_START && scenarioTick < D_STARVE_END) {
+    return;
+  }
+  /* One player per 60 Hz frame means every stream is serviced at 15 Hz.
+   * A 4096-frame chunk is ~93 ms even at 44.1 kHz, safely longer than the
+   * ~67 ms service interval, while keeping each QuickJS turn bounded. */
+  players[index]!.pump();
+}
+
 applyVolumes();
 updateVisuals();
 
@@ -230,15 +229,10 @@ updateVisuals();
     scenarioTick++;
     buttonEdges(buttons >>> 0);
 
-    // Deterministic independent-control timeline. Manual controls may alter a
-    // stream between these checkpoints; the next checkpoint remains valid.
     if (scenarioTick === 120) players[1]!.pause();
     if (scenarioTick === 180) players[1]!.play();
     if (scenarioTick === 210) players[2]!.stop();
-    if (scenarioTick === 240) {
-      players[2]!.play();
-      prime(players[2]!);
-    }
+    if (scenarioTick === 240) players[2]!.play();
     if (scenarioTick === 270) {
       trackScale[3] = 0.22;
       applyVolumes();
@@ -248,23 +242,16 @@ updateVisuals();
       applyVolumes();
     }
     if (scenarioTick === 330) {
-      // Replacing a still-live WavPlayer source destroys the old native handle
-      // and creates a new generation while A/B/C remain untouched.
+      /* Replacing D destroys the old generation-tagged native handle and
+       * creates a new one without touching A/B/C. Its next scheduled pump
+       * feeds the new ring and opens playback. */
       if (!players[3]!.loadPcm(pcm[3]!)) throw new Error("D generation reload refused");
       players[3]!.setVolume(master * trackScale[3]!);
       players[3]!.play();
-      prime(players[3]!);
     }
     if (scenarioTick >= 600) restartScenario();
 
-    // A always drains the namespace first. During D's skip interval this is
-    // intentional: the framework router must preserve D's underrun/credit
-    // facts until D resumes pumping.
-    players[0]!.pump();
-    players[1]!.pump();
-    players[2]!.pump();
-    if (scenarioTick >= dResumeTick) players[3]!.pump();
-
-    if ((scenarioTick % 6) === 0) updateVisuals(); // localized 10 Hz damage
+    pumpOneStream();
+    if ((scenarioTick % 12) === 0) updateVisuals();
     return scenarioTick;
   };
